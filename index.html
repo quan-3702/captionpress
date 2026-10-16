@@ -26,6 +26,8 @@
       <button data-x="txt">Plain text transcript (.txt)</button>
       <button data-x="txts">Transcript with times (.txt)</button>
       <button data-x="burn">🎬 Video with captions burned in <span class="badge pro-only">PRO</span></button>
+      <button data-x="voicevideo">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
+      <button data-x="voicewav">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
     </div>
     <div id="menu" class="menu" hidden>
       <button id="importBtn">Open a subtitle file (.srt / .vtt)…</button>
@@ -72,6 +74,22 @@
           </div>
           <p class="hint">Used for the preview and for videos saved with captions burned in. SRT and VTT files keep only the words and times.</p>
         </details>
+        <details id="voiceBox" class="style-box">
+          <summary>🎙 AI voice-over <span class="badge pro-only">PRO</span></summary>
+          <p class="hint">An AI voice reads your subtitle lines aloud, each at the right moment – great for translated videos, tutorials and faceless videos. Pick a voice and try it for free. With Pro you create the full voice-over, hear it with your video and save a video or WAV file with it. Each voice downloads once (about 60 MB) and then works offline.</p>
+          <div class="style-grid">
+            <label class="field">Voice<select id="vcVoice"></select></label>
+            <label class="field">Speed<select id="vcSpeed"><option value="0.9">Slower</option><option value="1">Normal</option><option value="1.1">A bit faster</option><option value="1.25">Fast</option></select></label>
+            <label class="field">Original sound <span id="vcOrigVal" class="muted"></span><input id="vcOrig" type="range" min="0" max="100" step="5"></label>
+          </div>
+          <div class="vc-btns">
+            <button id="vcTry" class="ghost">▶ Try this voice</button>
+            <button id="vcMake" class="primary">🎙 Create voice-over <span class="badge pro-only">PRO</span></button>
+            <label class="check"><input id="vcOn" type="checkbox" disabled> Hear it with the video</label>
+          </div>
+          <div id="vcProg" class="bar" hidden><i id="vcBar"></i></div>
+          <p id="vcStatus" class="hint"></p>
+        </details>
       </div>
     </section>
 
@@ -117,8 +135,10 @@
   </main>
 
   <dialog id="burnDialog" class="dlg">
-    <h2>Save video with captions</h2>
-    <p class="muted">CaptionPress plays your video from start to finish and records it with the captions drawn on. This takes as long as the video itself. Keep this window open.</p>
+    <h2>Save video</h2>
+    <p class="muted">CaptionPress plays your video from start to finish and records it with your captions and voice-over. This takes as long as the video itself. Keep this window open.</p>
+    <label class="check"><input id="burnCaps" type="checkbox" checked> Show the captions on the video</label>
+    <label id="burnVoiceRow" class="check"><input id="burnVoice" type="checkbox"> Add the AI voice-over</label>
     <div class="bar"><i id="burnBar"></i></div>
     <p id="burnText" class="hint"></p>
     <div class="row-btns">
@@ -135,6 +155,7 @@
       <li><strong>Accurate and Best quality</strong> – fewer mistakes, better with accents and noise</li>
       <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
       <li><strong>Save a video with captions burned in</strong> – ready for TikTok, Reels and Shorts</li>
+      <li><strong>AI voice-over</strong> – natural voices in 20+ languages read your subtitles aloud; save the video or a WAV file</li>
     </ul>
     <p id="proMsg" class="pro-msg" hidden></p>
     <div class="row-btns">

@@ -96,6 +96,47 @@ const LANGS = [
   ['fi', 'Finnish'], ['cs', 'Czech'], ['ro', 'Romanian'], ['hu', 'Hungarian'], ['el', 'Greek'], ['he', 'Hebrew'],
 ];
 
+
+// ---- AI voices (Piper, open-source). [id, label] grouped by language code used in LANGS ----
+const VOICES = {
+  en: [['en_US-lessac-medium', 'Lessac – US, female'], ['en_US-ryan-medium', 'Ryan – US, male'], ['en_US-amy-medium', 'Amy – US, female'], ['en_US-joe-medium', 'Joe – US, male'], ['en_US-kristin-medium', 'Kristin – US, female'], ['en_GB-alan-medium', 'Alan – British, male'], ['en_GB-jenny_dioco-medium', 'Jenny – British, female']],
+  vi: [['vi_VN-vais1000-medium', 'Vais – Vietnamese, female'], ['vi_VN-25hours_single-low', '25hours – Vietnamese'], ['vi_VN-vivos-x_low', 'Vivos – Vietnamese']],
+  es: [['es_ES-davefx-medium', 'Dave – Spain, male'], ['es_ES-sharvard-medium', 'Sharvard – Spain'], ['es_MX-claude-high', 'Claude – Mexico']],
+  fr: [['fr_FR-siwis-medium', 'Siwis – female'], ['fr_FR-tom-medium', 'Tom – male'], ['fr_FR-upmc-medium', 'UPMC']],
+  de: [['de_DE-thorsten-medium', 'Thorsten – male'], ['de_DE-kerstin-low', 'Kerstin – female'], ['de_DE-eva_k-x_low', 'Eva – female']],
+  it: [['it_IT-riccardo-x_low', 'Riccardo – male']],
+  pt: [['pt_BR-faber-medium', 'Faber – Brazil, male'], ['pt_PT-tugão-medium', 'Tugão – Portugal']],
+  nl: [['nl_BE-nathalie-medium', 'Nathalie – female'], ['nl_NL-mls-medium', 'MLS – Netherlands']],
+  ru: [['ru_RU-irina-medium', 'Irina – female'], ['ru_RU-dmitri-medium', 'Dmitri – male'], ['ru_RU-denis-medium', 'Denis – male']],
+  uk: [['uk_UA-ukrainian_tts-medium', 'Ukrainian TTS']],
+  pl: [['pl_PL-gosia-medium', 'Gosia – female'], ['pl_PL-darkman-medium', 'Darkman – male']],
+  tr: [['tr_TR-fettah-medium', 'Fettah – male'], ['tr_TR-dfki-medium', 'DFKI']],
+  ar: [['ar_JO-kareem-medium', 'Kareem – male']],
+  zh: [['zh_CN-huayan-medium', 'Huayan – female']],
+  sv: [['sv_SE-nst-medium', 'NST']], da: [['da_DK-talesyntese-medium', 'Talesyntese']], no: [['no_NO-talesyntese-medium', 'Talesyntese']],
+  fi: [['fi_FI-harri-medium', 'Harri – male']], cs: [['cs_CZ-jirka-medium', 'Jirka – male']], ro: [['ro_RO-mihai-medium', 'Mihai – male']],
+  hu: [['hu_HU-anna-medium', 'Anna – female']], el: [['el_GR-rapunzelina-low', 'Rapunzelina – female']],
+};
+const SAMPLE_LINE = {
+  en: 'Hello! This is how your video will sound with this voice.', vi: 'Xin chào! Đây là giọng đọc cho video của bạn.',
+  es: '¡Hola! Así sonará tu vídeo con esta voz.', fr: 'Bonjour ! Voici comment votre vidéo sonnera avec cette voix.',
+  de: 'Hallo! So klingt dein Video mit dieser Stimme.', it: 'Ciao! Ecco come suonerà il tuo video con questa voce.',
+  pt: 'Olá! É assim que o seu vídeo vai soar com esta voz.', ru: 'Привет! Так будет звучать ваше видео с этим голосом.',
+};
+const langOfVoice = (id) => String(id || '').slice(0, 2);
+// Fit each spoken clip into its subtitle time: speed it up a little when it is too long for the gap.
+function planVoice(cues, clips, total) {
+  return cues.map((c, i) => {
+    const clip = clips[i];
+    if (!clip) return null;
+    const next = cues[i + 1] ? cues[i + 1].start : total;
+    const room = Math.max(0.3, next - c.start);
+    const len = clip.length / clip.sampleRate;
+    const rate = len > room ? Math.min(1.35, len / room) : 1;
+    return { start: c.start, rate };
+  });
+}
+
 // ---- time ----
 function fmtTime(sec, sep) {
   sep = sep || ',';
@@ -373,13 +414,14 @@ function limitReason(opts, pro) {
   if (opts.model && MODELS[opts.model] && MODELS[opts.model].pro) return `The ${MODELS[opts.model].name} quality setting is part of CaptionPress Pro.`;
   if (opts.task === 'translate') return 'Translating speech into English subtitles is part of CaptionPress Pro.';
   if (opts.burn) return 'Saving a video with the captions burned in is part of CaptionPress Pro.';
+  if (opts.voice) return 'AI voice-over – reading your subtitles aloud and saving the video or audio – is part of CaptionPress Pro.';
   return '';
 }
 
 if (typeof module !== 'undefined') module.exports = {
   SR, MODELS, LANGS, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
-  parseSubs, cueAt, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
+  parseSubs, cueAt, VOICES, SAMPLE_LINE, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
 };
 // ---------- CaptionPress UI ----------
 let file = null, fileUrl = '', cues = [], hist = [], fut = [], active = -1, busy = false;
@@ -605,7 +647,8 @@ $('fwd5').onclick = () => { video.currentTime = Math.min(video.duration || 0, vi
 let frameAR = 16 / 9;
 function fitFrame() {
   const left = document.querySelector('.left');
-  const avail = left.clientHeight - 32 - 54 - ($('player').querySelector('.style-box').offsetHeight || 44) - 24;
+  const boxes = [...$('player').querySelectorAll('.style-box')].reduce((n, b) => n + (b.offsetHeight || 44) + 12, 0);
+  const avail = left.clientHeight - 32 - 54 - boxes - 12;
   const w = Math.max(200, Math.min(left.clientWidth - 32, Math.max(160, avail) * frameAR));
   $('frame').style.width = w + 'px';
   capCss();
@@ -870,7 +913,18 @@ $('exportMenu').addEventListener('click', (e) => {
     const why = limitReason({ burn: true }, unlocked());
     if (why) { openPro(why); return; }
     if (!file) { toast('Open the video first.'); return; }
-    openBurn();
+    openBurn('captions');
+  }
+  if (x === 'voicevideo' || x === 'voicewav') {
+    const why = limitReason({ voice: true }, unlocked());
+    if (why) { openPro(why); return; }
+    if (!file) { toast('Open the video first.'); return; }
+    if (!cues.length) { toast('Make the subtitle lines first – the AI voice reads them aloud.'); return; }
+    ensureVoice().then((ok) => {
+      if (!ok) return;
+      if (x === 'voicewav') { download(baseName() + ' voice-over.wav', encodeWav(voiceTrack), 'audio/wav'); toast('Voice-over saved to your Downloads folder.'); }
+      else openBurn('voice');
+    });
   }
 });
 
@@ -906,8 +960,12 @@ function pickMime() {
   return list.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 }
 let burn = null;
-function openBurn() {
+function openBurn(mode) {
   $('burnBar').style.width = '0';
+  $('burnCaps').checked = true;
+  $('burnVoice').disabled = !voiceTrack;
+  $('burnVoice').checked = mode === 'voice' && !!voiceTrack;
+  $('burnVoiceRow').hidden = !voiceTrack;
   $('burnText').textContent = `Length: ${fmtClock(video.duration || 0)}. The video is saved as ${pickMime().startsWith('video/mp4') ? 'MP4' : 'WEBM'}.`;
   $('burnStart').disabled = false;
   $('burnClose').textContent = 'Cancel';
@@ -917,6 +975,9 @@ async function startBurn() {
   const mime = pickMime();
   if (!mime) { $('burnText').textContent = 'Recording video is not supported on this computer.'; return; }
   video.pause();
+  const showCaps = $('burnCaps').checked;
+  const useVoice = $('burnVoice').checked && !!voiceTrack;
+  if (!showCaps && !useVoice) { $('burnText').textContent = 'Tick captions, voice-over or both.'; return; }
   $('burnStart').disabled = true;
   const v = document.createElement('video');
   v.src = fileUrl; v.playsInline = true; v.preload = 'auto';
@@ -932,7 +993,11 @@ async function startBurn() {
   try { await ac.resume(); } catch (_) {}
   const src = ac.createMediaElementSource(v);
   const dest = ac.createMediaStreamDestination();
-  src.connect(dest);
+  const gain = ac.createGain();
+  gain.gain.value = useVoice ? vc.orig / 100 : 1;
+  src.connect(gain); gain.connect(dest);
+  let vs = null;
+  if (useVoice) { vs = ac.createBufferSource(); vs.buffer = voiceTrack; vs.connect(dest); }
   const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
   const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: Math.min(12e6, Math.max(2.5e6, W * H * 4)) });
   const parts = [];
@@ -941,7 +1006,7 @@ async function startBurn() {
   const draw = () => {
     if (hasPic) ctx.drawImage(v, 0, 0, W, H); else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
     const i = cueAt(cues, v.currentTime);
-    if (i >= 0) drawCaption(ctx, cues[i].text, W, H);
+    if (i >= 0 && showCaps) drawCaption(ctx, cues[i].text, W, H);
     const d = v.duration || 1;
     $('burnBar').style.width = (v.currentTime / d * 100) + '%';
     $('burnText').textContent = `Recording… ${fmtClock(v.currentTime)} of ${fmtClock(d)}. Keep this window open.`;
@@ -952,6 +1017,7 @@ async function startBurn() {
   draw();
   rec.start(1000);
   try { await v.play(); } catch (e) { rec.stop(); $('burnText').textContent = 'The video could not be played: ' + e.message; return; }
+  if (vs) vs.start(ac.currentTime, v.currentTime);
   if (hasPic && v.requestVideoFrameCallback) v.requestVideoFrameCallback(loop); else timer = setInterval(draw, 1000 / 30);
   await new Promise((r) => { v.onended = r; burn.end = r; });
   draw();
@@ -963,9 +1029,10 @@ async function startBurn() {
   burn = null;
   if (stopped) return;
   const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
-  download(`${baseName()} with captions.${ext}`, new Blob(parts, { type: mime.split(';')[0] }));
+  const outName = `${baseName()} with ${useVoice && showCaps ? 'voice-over and captions' : useVoice ? 'voice-over' : 'captions'}.${ext}`;
+  download(outName, new Blob(parts, { type: mime.split(';')[0] }));
   $('burnBar').style.width = '100%';
-  $('burnText').textContent = `Saved “${baseName()} with captions.${ext}” to your Downloads folder.`;
+  $('burnText').textContent = `Saved “${outName}” to your Downloads folder.`;
   $('burnClose').textContent = 'Close';
 }
 $('burnStart').onclick = () => startBurn().catch((e) => { $('burnText').textContent = e.message; });
@@ -1009,3 +1076,175 @@ updateGenUI();
 renderList();
 checkPro().then(() => setPro(isPro));
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// ---------- AI voice-over (Pro; "Try this voice" is free) ----------
+let vc = { voice: '', speed: 1, orig: 20 };
+try { Object.assign(vc, JSON.parse(localStorage.getItem('cp-voice') || '{}')); } catch (_) {}
+let ttsW = null, ttsJobs = {}, ttsId = 0, ttsProg = null;
+const clipCache = new Map();
+let voiceTrack = null, voiceSig = '', voiceBusy = false, voiceCancel = false;
+let vAc = null, vSrc = null;
+
+function saveVc() { try { localStorage.setItem('cp-voice', JSON.stringify(vc)); } catch (_) {} }
+function vcStatus(t) { $('vcStatus').textContent = t || ''; }
+function vcBar(p) { $('vcProg').hidden = p == null; $('vcBar').style.width = (p || 0) + '%'; }
+
+function getTTS() {
+  if (ttsW) return ttsW;
+  ttsW = new Worker('tts-worker.js');
+  ttsW.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === 'progress') { if (ttsProg) ttsProg(m.loaded, m.total); return; }
+    const j = ttsJobs[m.id];
+    if (!j) return;
+    delete ttsJobs[m.id];
+    if (m.type === 'error') j.reject(new Error(m.message)); else j.resolve({ data: m.data, sampleRate: m.sampleRate });
+  };
+  ttsW.onerror = (e) => { Object.values(ttsJobs).forEach((j) => j.reject(new Error(e.message || 'The voice engine stopped.'))); ttsJobs = {}; ttsW = null; };
+  return ttsW;
+}
+function speakText(text, voice, speed) {
+  const t = cleanText(String(text).replace(/\n/g, ' '));
+  const key = voice + '|' + speed + '|' + t;
+  if (clipCache.has(key)) return Promise.resolve(clipCache.get(key));
+  const id = ++ttsId;
+  return new Promise((resolve, reject) => {
+    ttsJobs[id] = { resolve: (r) => { clipCache.set(key, r); resolve(r); }, reject };
+    getTTS().postMessage({ type: 'speak', id, text: t, voice, speed });
+  });
+}
+const showDownload = (loaded, total) => {
+  if (total > 1e6) { vcBar(loaded / total * 100); vcStatus(`Getting the voice ready (first time only) · ${(loaded / 1048576).toFixed(0)} of ${(total / 1048576).toFixed(0)} MB`); }
+};
+
+function defaultVoiceLang() {
+  if (opts.task === 'translate') return 'en';
+  if (opts.lang && VOICES[opts.lang]) return opts.lang;
+  return 'en';
+}
+function fillVoices() {
+  const names = Object.fromEntries(LANGS);
+  const want = vc.voice && Object.values(VOICES).some((l) => l.some((v) => v[0] === vc.voice)) ? vc.voice : VOICES[defaultVoiceLang()][0][0];
+  $('vcVoice').innerHTML = Object.entries(VOICES).map(([lang, list]) =>
+    `<optgroup label="${esc(names[lang] || lang)}">${list.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('')}</optgroup>`).join('');
+  $('vcVoice').value = want; vc.voice = want;
+  $('vcSpeed').value = String(vc.speed);
+  $('vcOrig').value = vc.orig;
+  $('vcOrigVal').textContent = vc.orig ? vc.orig + '%' : 'off';
+}
+
+function toBuffer(ctx, clip) {
+  const b = ctx.createBuffer(1, clip.data.length, clip.sampleRate);
+  b.copyToChannel(clip.data, 0);
+  return b;
+}
+async function tryVoice() {
+  if (voiceBusy) return;
+  const i = cueAt(cues, video.currentTime || 0);
+  const text = (cues[i] || cues[0] || {}).text || SAMPLE_LINE[langOfVoice(vc.voice)] || SAMPLE_LINE.en;
+  voiceBusy = true; $('vcTry').disabled = true;
+  ttsProg = showDownload;
+  vcStatus('Preparing the voice…');
+  try {
+    const clip = await speakText(text, vc.voice, vc.speed);
+    vcBar(null);
+    vAc = vAc || new AudioContext();
+    await vAc.resume();
+    const s = vAc.createBufferSource();
+    s.buffer = toBuffer(vAc, clip);
+    s.connect(vAc.destination);
+    s.start();
+    vcStatus('▶ “' + text.replace(/\n/g, ' ').slice(0, 80) + '”');
+  } catch (e) { vcBar(null); vcStatus('The voice could not be loaded: ' + e.message + '. Check the internet connection for the first download.'); }
+  finally { voiceBusy = false; $('vcTry').disabled = false; ttsProg = null; }
+}
+
+const voiceKey = () => JSON.stringify([vc.voice, vc.speed, cues.map((c) => [c.start, c.text])]);
+async function makeVoice() {
+  const why = limitReason({ voice: true }, unlocked());
+  if (why) { openPro(why); return false; }
+  if (!cues.length) { vcStatus('Make or open the subtitle lines first – the voice reads them aloud.'); return false; }
+  if (voiceBusy) return false;
+  voiceBusy = true; voiceCancel = false;
+  $('vcMake').disabled = true; $('vcTry').disabled = true;
+  ttsProg = showDownload;
+  const list = cues.map((c) => ({ ...c }));
+  const clips = [];
+  try {
+    for (let i = 0; i < list.length; i++) {
+      if (voiceCancel) return false;
+      clips.push(await speakText(list[i].text, vc.voice, vc.speed));
+      vcBar((i + 1) / list.length * 100);
+      vcStatus(`Recording the voice… line ${i + 1} of ${list.length}`);
+    }
+    const total = Math.max(video.duration || 0, list[list.length - 1].end + 2);
+    const SRATE = 44100;
+    const off = new OfflineAudioContext(1, Math.ceil(total * SRATE), SRATE);
+    const plan = planVoice(list, clips.map((c) => ({ length: c.data.length, sampleRate: c.sampleRate })), total);
+    plan.forEach((p, i) => {
+      if (!p) return;
+      const s = off.createBufferSource();
+      s.buffer = toBuffer(off, clips[i]);
+      s.playbackRate.value = p.rate;
+      s.connect(off.destination);
+      s.start(p.start);
+    });
+    voiceTrack = await off.startRendering();
+    voiceSig = JSON.stringify([vc.voice, vc.speed, list.map((c) => [c.start, c.text])]);
+    vcBar(null);
+    $('vcOn').disabled = false; $('vcOn').checked = true;
+    applyOrigVolume();
+    vcStatus(`Voice-over ready – ${list.length} lines. Press play to hear it, or save it from 💾 Save subtitles.`);
+    return true;
+  } catch (e) {
+    vcBar(null); vcStatus('The voice-over could not be made: ' + e.message);
+    return false;
+  } finally {
+    voiceBusy = false; ttsProg = null;
+    $('vcMake').disabled = false; $('vcTry').disabled = false;
+  }
+}
+async function ensureVoice() {
+  if (voiceTrack && voiceSig === voiceKey()) return true;
+  $('voiceBox').open = true;
+  return makeVoice();
+}
+
+// play the voice track in step with the video
+function stopVoicePlay() { if (vSrc) { try { vSrc.stop(); } catch (_) {} vSrc = null; } }
+function startVoicePlay() {
+  stopVoicePlay();
+  if (!$('vcOn').checked || !voiceTrack || video.paused) return;
+  vAc = vAc || new AudioContext();
+  vAc.resume();
+  vSrc = vAc.createBufferSource();
+  vSrc.buffer = voiceTrack;
+  vSrc.connect(vAc.destination);
+  vSrc.start(0, Math.min(voiceTrack.duration, Math.max(0, video.currentTime)));
+  if (voiceSig !== voiceKey()) vcStatus('Lines changed since the voice-over was made – click Create voice-over to update it.');
+}
+function applyOrigVolume() { video.volume = $('vcOn').checked && voiceTrack ? vc.orig / 100 : 1; }
+video.addEventListener('play', startVoicePlay);
+video.addEventListener('pause', stopVoicePlay);
+video.addEventListener('seeking', stopVoicePlay);
+video.addEventListener('seeked', startVoicePlay);
+video.addEventListener('emptied', () => { stopVoicePlay(); voiceTrack = null; voiceSig = ''; $('vcOn').checked = false; $('vcOn').disabled = true; applyOrigVolume(); vcStatus(''); });
+
+function encodeWav(buf) {
+  const data = buf.getChannelData(0), sr = buf.sampleRate;
+  const dv = new DataView(new ArrayBuffer(44 + data.length * 2));
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); dv.setUint32(4, 36 + data.length * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, sr, true);
+  dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, data.length * 2, true);
+  for (let i = 0, o = 44; i < data.length; i++, o += 2) { const s = Math.max(-1, Math.min(1, data[i])); dv.setInt16(o, s < 0 ? s * 32768 : s * 32767, true); }
+  return new Blob([dv.buffer], { type: 'audio/wav' });
+}
+
+$('vcVoice').addEventListener('change', () => { vc.voice = $('vcVoice').value; saveVc(); });
+$('vcSpeed').addEventListener('change', () => { vc.speed = Number($('vcSpeed').value); saveVc(); });
+$('vcOrig').addEventListener('input', () => { vc.orig = Number($('vcOrig').value); $('vcOrigVal').textContent = vc.orig ? vc.orig + '%' : 'off'; applyOrigVolume(); saveVc(); });
+$('vcOn').addEventListener('change', () => { applyOrigVolume(); if ($('vcOn').checked) startVoicePlay(); else stopVoicePlay(); });
+$('vcTry').onclick = tryVoice;
+$('vcMake').onclick = () => makeVoice();
+$('voiceBox').addEventListener('toggle', () => { if (typeof fitFrame === 'function') fitFrame(); });
+fillVoices();
