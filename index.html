@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CaptionPress – Auto Subtitle Generator &amp; Editor</title>
+  <meta name="description" content="Create subtitles for any video automatically with AI that runs on your own computer. Edit the timing and text, then save SRT or VTT files or a video with captions burned in.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="icon-192.png" alt="" width="30" height="30"><span>CaptionPress</span></div>
+    <span id="fileName" class="file-name"></span>
+    <div class="top-btns">
+      <button id="openBtn" class="tb">📂 Open video</button>
+      <button id="exportBtn" class="tb" disabled>💾 Save subtitles ▾</button>
+      <button id="moreBtn" class="tb">☰ More</button>
+      <button id="proBtn" class="pro-btn" hidden>★ Get Pro</button>
+    </div>
+    <div id="exportMenu" class="menu" hidden>
+      <button data-x="srt">SubRip subtitles (.srt) <small>YouTube, Premiere, VLC…</small></button>
+      <button data-x="vtt">Web subtitles (.vtt)</button>
+      <button data-x="txt">Plain text transcript (.txt)</button>
+      <button data-x="txts">Transcript with times (.txt)</button>
+      <button data-x="burn">🎬 Video with captions burned in <span class="badge pro-only">PRO</span></button>
+    </div>
+    <div id="menu" class="menu" hidden>
+      <button id="importBtn">Open a subtitle file (.srt / .vtt)…</button>
+      <button id="clearBtn" class="danger">Remove all subtitle lines…</button>
+      <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
+      <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress%20feedback">✉ Feedback &amp; support</a>
+      <a href="https://apps.microsoft.com/detail/9NB48B109NR4" target="_blank" rel="noopener">More apps: CueScroll teleprompter</a>
+    </div>
+    <input id="fileIn" type="file" accept="video/*,audio/*,.mkv,.mov,.m4a,.mp3,.wav" hidden>
+    <input id="subIn" type="file" accept=".srt,.vtt,text/vtt" hidden>
+  </header>
+
+  <main class="layout">
+    <section class="left">
+      <div id="drop" class="drop">
+        <div class="drop-in">
+          <div class="drop-icon">🎬</div>
+          <h1>Subtitles for your video in minutes</h1>
+          <p>Drop a video or audio file here, or</p>
+          <button id="dropOpen" class="primary big">Choose a file</button>
+          <p class="hint">The AI runs on this computer. Your video is never uploaded anywhere.</p>
+        </div>
+      </div>
+      <div id="player" class="player" hidden>
+        <div id="frame" class="frame">
+          <video id="video" playsinline></video>
+          <div id="cap" class="cap"></div>
+        </div>
+        <div class="transport">
+          <button id="playBtn" class="ghost icon" title="Play / pause (Ctrl+Space)">▶</button>
+          <span id="clock" class="clock">0:00 / 0:00</span>
+          <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Position">
+          <button id="back5" class="ghost icon" title="Back 5 seconds">⟲ 5</button>
+          <button id="fwd5" class="ghost icon" title="Forward 5 seconds">5 ⟳</button>
+        </div>
+        <details class="style-box">
+          <summary>Caption look</summary>
+          <div class="style-grid">
+            <label class="field">Text size<input id="stSize" type="range" min="3" max="10" step="0.5"></label>
+            <label class="field">Position<select id="stPos"><option value="bottom">Bottom</option><option value="top">Top</option></select></label>
+            <label class="field">Text colour<input id="stColor" type="color"></label>
+            <label class="field">Background<select id="stBg"><option value="box">Dark box</option><option value="shadow">Outline only</option><option value="none">None</option></select></label>
+            <label class="field">Letters per line<select id="stChars"><option value="32">32 – phone / vertical</option><option value="42">42 – standard</option><option value="56">56 – wide</option></select></label>
+          </div>
+          <p class="hint">Used for the preview and for videos saved with captions burned in. SRT and VTT files keep only the words and times.</p>
+        </details>
+      </div>
+    </section>
+
+    <aside class="right">
+      <div id="genCard" class="card">
+        <h2>Create subtitles automatically</h2>
+        <div class="two">
+          <label class="field">Spoken language<select id="lang"></select></label>
+          <label class="field">Quality<select id="model"></select></label>
+        </div>
+        <label class="field">Subtitles in<select id="task"><option value="transcribe">The same language as spoken</option><option value="translate">English (translate) – PRO</option></select></label>
+        <button id="genBtn" class="primary big wide" disabled>✨ Create subtitles</button>
+        <p id="genHint" class="hint"></p>
+        <div id="prog" class="prog" hidden>
+          <div class="bar"><i id="progBar"></i></div>
+          <div class="prog-row"><span id="progText"></span><button id="cancelBtn" class="ghost small">Stop</button></div>
+        </div>
+      </div>
+
+      <div class="list-head">
+        <h2>Subtitle lines <span id="cueCount" class="muted"></span></h2>
+        <div class="list-tools">
+          <button id="undoBtn" class="ghost small" title="Undo (Ctrl+Z)" disabled>↶</button>
+          <button id="redoBtn" class="ghost small" title="Redo (Ctrl+Y)" disabled>↷</button>
+          <button id="addBtn" class="ghost small" title="Add a line at the current time" disabled>＋ Line</button>
+          <button id="findBtn" class="ghost small" title="Find and replace (Ctrl+H)">🔎</button>
+          <button id="shiftBtn" class="ghost small" title="Move all times earlier or later">⇄ Timing</button>
+        </div>
+      </div>
+      <div id="findBar" class="find-bar" hidden>
+        <input id="findIn" type="search" placeholder="Find">
+        <input id="replIn" type="text" placeholder="Replace with">
+        <button id="replBtn" class="ghost small">Replace all</button>
+      </div>
+      <div id="shiftBar" class="find-bar" hidden>
+        <label class="inline">Move every line by <input id="shiftIn" type="number" step="0.1" value="0.5"> seconds</label>
+        <button id="shiftEarlier" class="ghost small">← Earlier</button>
+        <button id="shiftLater" class="ghost small">Later →</button>
+      </div>
+      <div id="cues" class="cues"></div>
+      <p id="emptyList" class="hint empty">Subtitle lines appear here. Open a video and press <strong>Create subtitles</strong>, or open an existing .srt file from the ☰ More menu.</p>
+    </aside>
+  </main>
+
+  <dialog id="burnDialog" class="dlg">
+    <h2>Save video with captions</h2>
+    <p class="muted">CaptionPress plays your video from start to finish and records it with the captions drawn on. This takes as long as the video itself. Keep this window open.</p>
+    <div class="bar"><i id="burnBar"></i></div>
+    <p id="burnText" class="hint"></p>
+    <div class="row-btns">
+      <button id="burnStart" class="primary">Start</button>
+      <button id="burnClose" class="ghost">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog id="proDialog" class="dlg">
+    <h2>CaptionPress Pro</h2>
+    <p class="muted">One-time purchase. Yours forever on this Microsoft account.</p>
+    <ul class="pro-list">
+      <li><strong>Videos of any length</strong> <span class="muted">(Free: the first 10 minutes of each file)</span></li>
+      <li><strong>Accurate and Best quality</strong> – fewer mistakes, better with accents and noise</li>
+      <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
+      <li><strong>Save a video with captions burned in</strong> – ready for TikTok, Reels and Shorts</li>
+    </ul>
+    <p id="proMsg" class="pro-msg" hidden></p>
+    <div class="row-btns">
+      <button id="buyBtn" class="primary">Unlock Pro</button>
+      <button id="restoreBtn" class="ghost">Restore purchase</button>
+      <button id="closePro" class="ghost">Not now</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

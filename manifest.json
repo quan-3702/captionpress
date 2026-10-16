@@ -1,0 +1,19 @@
+{
+  "name": "CaptionPress - Auto Subtitle Generator & Editor",
+  "short_name": "CaptionPress",
+  "description": "Create subtitles for any video automatically with AI that runs on your own computer. Edit them, then save SRT or VTT files or a video with captions burned in.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f766e",
+  "theme_color": "#0f766e",
+  "categories": ["productivity", "multimedia", "utilities"],
+  "file_handlers": [
+    { "action": "./", "accept": { "video/*": [".mp4", ".mov", ".mkv", ".webm", ".m4v"], "audio/*": [".mp3", ".m4a", ".wav"], "application/x-subrip": [".srt"], "text/vtt": [".vtt"] } }
+  ],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
