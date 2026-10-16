@@ -542,10 +542,12 @@ $('cues').addEventListener('dblclick', (e) => {
 });
 
 // ---------- caption overlay & active line ----------
+// text size follows the picture height, but narrow (vertical) videos use their width so lines still fit
+const capBase = (w, h) => Math.min(h, w * 0.6);
 function capCss() {
   const span = $('cap').querySelector('span');
-  const h = $('frame').clientHeight || 360;
-  $('cap').style.fontSize = (h * style.size / 100) + 'px';
+  const h = $('frame').clientHeight || 360, w = $('frame').clientWidth || 640;
+  $('cap').style.fontSize = (capBase(w, h) * style.size / 100) + 'px';
   $('cap').classList.toggle('top', style.pos === 'top');
   if (!span) return;
   span.style.color = style.color;
@@ -875,7 +877,7 @@ $('exportMenu').addEventListener('click', (e) => {
 // ---------- burn-in ----------
 function drawCaption(ctx, text, W, H) {
   if (!text) return;
-  const px = Math.round(H * style.size / 100);
+  const px = Math.round(capBase(W, H) * style.size / 100);
   ctx.font = `600 ${px}px "Segoe UI", system-ui, sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const lines = text.split('\n');
@@ -980,6 +982,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.menu')) clos
 $('importBtn').onclick = () => { closeMenus(); $('subIn').click(); };
 $('clearBtn').onclick = () => { closeMenus(); if (!cues.length) return; commit([]); toast('All lines removed. Press Ctrl+Z to bring them back.'); };
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeMenus();
   const typing = e.target.matches('input, textarea, select');
   if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); if (file) video.paused ? video.play() : video.pause(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'h') { e.preventDefault(); $('findBtn').click(); return; }
