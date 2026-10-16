@@ -114,3 +114,8 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .vc-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 8px; }
 #vcProg { margin: 4px 0; }
 .style-box + .style-box { margin-top: 0; }
+
+.tr-card summary { cursor: pointer; list-style-position: inside; }
+.tr-card[open] summary { margin-bottom: 4px; }
+.tr-row { align-items: end; }
+.tr-row button { height: 38px; }

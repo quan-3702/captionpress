@@ -1,4 +1,4 @@
-const CACHE = 'captionpress-v3';
+const CACHE = 'captionpress-v4';
 const RUNTIME = 'captionpress-lib-v1';
 const ASSETS = ['./', 'index.html', 'help.html', 'style.css', 'app.js', 'worker.js', 'tts-worker.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 

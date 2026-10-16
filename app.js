@@ -137,6 +137,58 @@ function planVoice(cues, clips, total) {
   });
 }
 
+
+// ---- translation (English subtitles -> another language, Opus-MT models, open-source) ----
+const TR_LANGS = [
+  ['vi', 'Vietnamese', 'Xenova/opus-mt-en-vi'], ['es', 'Spanish', 'Xenova/opus-mt-en-es'], ['fr', 'French', 'Xenova/opus-mt-en-fr'],
+  ['de', 'German', 'Xenova/opus-mt-en-de'], ['it', 'Italian', 'Xenova/opus-mt-en-it'], ['zh', 'Chinese', 'Xenova/opus-mt-en-zh'],
+  ['ja', 'Japanese', 'Xenova/opus-mt-en-jap'], ['ru', 'Russian', 'Xenova/opus-mt-en-ru'], ['uk', 'Ukrainian', 'Xenova/opus-mt-en-uk'],
+  ['id', 'Indonesian', 'Xenova/opus-mt-en-id'], ['hi', 'Hindi', 'Xenova/opus-mt-en-hi'], ['ar', 'Arabic', 'Xenova/opus-mt-en-ar'],
+  ['nl', 'Dutch', 'Xenova/opus-mt-en-nl'], ['sv', 'Swedish', 'Xenova/opus-mt-en-sv'], ['da', 'Danish', 'Xenova/opus-mt-en-da'],
+  ['fi', 'Finnish', 'Xenova/opus-mt-en-fi'], ['cs', 'Czech', 'Xenova/opus-mt-en-cs'], ['ro', 'Romanian', 'Xenova/opus-mt-en-ro'],
+  ['hu', 'Hungarian', 'Xenova/opus-mt-en-hu'],
+];
+// Join neighbouring lines into whole sentences so the translation has context. Returns [{from, to, text}]
+function sentenceGroups(cues, maxLines) {
+  maxLines = maxLines || 4;
+  const groups = [];
+  let cur = null;
+  cues.forEach((c, i) => {
+    const t = cleanText(c.text.replace(/\n/g, ' '));
+    if (!cur) cur = { from: i, to: i, text: t };
+    else { cur.to = i; cur.text += ' ' + t; }
+    const ends = /[.!?…。！？]["')\]]?$/.test(t);
+    const gap = cues[i + 1] ? cues[i + 1].start - c.end : 99;
+    if (ends || gap > 1.2 || cur.to - cur.from + 1 >= maxLines || i === cues.length - 1) { groups.push(cur); cur = null; }
+  });
+  return groups;
+}
+// Split translated text over n lines in proportion to the original line lengths, cutting at spaces.
+function distribute(text, weights) {
+  const t = cleanText(text);
+  const n = weights.length;
+  if (n <= 1) return [t];
+  const total = weights.reduce((a, b) => a + b, 0) || n;
+  const out = [];
+  let rest = t;
+  let restW = total;
+  for (let k = 0; k < n - 1; k++) {
+    const target = Math.round(rest.length * (weights[k] / restW));
+    let cut = -1, best = Infinity;
+    for (let i = 1; i < rest.length; i++) {
+      if (rest[i] !== ' ') continue;
+      const d = Math.abs(i - target) - (/[,.;:!?]/.test(rest[i - 1]) ? 4 : 0);
+      if (d < best) { best = d; cut = i; }
+    }
+    if (cut < 0) cut = Math.max(1, Math.min(rest.length - 1, target)); // no spaces (e.g. Chinese)
+    out.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+    restW -= weights[k];
+  }
+  out.push(rest);
+  return out.map((x) => x || '…');
+}
+
 // ---- time ----
 function fmtTime(sec, sep) {
   sep = sep || ',';
@@ -414,6 +466,7 @@ function limitReason(opts, pro) {
   if (opts.model && MODELS[opts.model] && MODELS[opts.model].pro) return `The ${MODELS[opts.model].name} quality setting is part of CaptionPress Pro.`;
   if (opts.task === 'translate') return 'Translating speech into English subtitles is part of CaptionPress Pro.';
   if (opts.burn) return 'Saving a video with the captions burned in is part of CaptionPress Pro.';
+  if (opts.translateTo) return 'Translating subtitles into another language is part of CaptionPress Pro.';
   if (opts.voice) return 'AI voice-over – reading your subtitles aloud and saving the video or audio – is part of CaptionPress Pro.';
   return '';
 }
@@ -421,7 +474,7 @@ function limitReason(opts, pro) {
 if (typeof module !== 'undefined') module.exports = {
   SR, MODELS, LANGS, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
-  parseSubs, cueAt, VOICES, SAMPLE_LINE, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
+  parseSubs, cueAt, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
 };
 // ---------- CaptionPress UI ----------
 let file = null, fileUrl = '', cues = [], hist = [], fut = [], active = -1, busy = false;
@@ -699,7 +752,7 @@ function getWorker() {
   worker = new Worker('worker.js', { type: 'module' });
   worker.onmessage = (e) => {
     const m = e.data;
-    if (m.type === 'progress') { onLoadProgress(m.p); return; }
+    if (m.type === 'progress') { if (m.src === 'mt') { if (typeof trProgress === 'function') trProgress(m.p); } else onLoadProgress(m.p); return; }
     const j = jobs[m.id != null ? m.id : 'load'];
     if (!j) return;
     delete jobs[m.id != null ? m.id : 'load'];
@@ -1248,3 +1301,63 @@ $('vcTry').onclick = tryVoice;
 $('vcMake').onclick = () => makeVoice();
 $('voiceBox').addEventListener('toggle', () => { if (typeof fitFrame === 'function') fitFrame(); });
 fillVoices();
+// ---------- Translate subtitles (Pro) ----------
+let trBusy = false, trDl = {};
+function trStatus(t) { $('trStatus').textContent = t || ''; }
+function trBarSet(p) { $('trProg').hidden = p == null; $('trBar').style.width = (p || 0) + '%'; }
+function trProgress(p) {
+  if (!p || !p.file || !(p.status === 'progress' || p.status === 'done')) return;
+  trDl[p.file] = { loaded: p.loaded || (trDl[p.file] && trDl[p.file].total) || 0, total: p.total || (trDl[p.file] && trDl[p.file].total) || 0 };
+  const all = Object.values(trDl);
+  const loaded = all.reduce((n, x) => n + (x.loaded || 0), 0), total = all.reduce((n, x) => n + (x.total || 0), 0);
+  if (total > 2e6) { trBarSet(loaded / total * 100); trStatus(`Getting the translator ready (first time only) · ${(loaded / 1048576).toFixed(0)} of ${(total / 1048576).toFixed(0)} MB`); }
+}
+async function translateLines() {
+  const why = limitReason({ translateTo: true }, unlocked());
+  if (why) { openPro(why); return; }
+  if (!cues.length) { trStatus('Make or open the subtitle lines first.'); return; }
+  if (trBusy || busy) return;
+  const target = TR_LANGS.find((l) => l[0] === $('trLang').value) || TR_LANGS[0];
+  trBusy = true; trDl = {};
+  $('trBtn').disabled = true;
+  const before = snapshot();
+  const list = cues.map((c) => ({ ...c }));
+  const groups = sentenceGroups(list);
+  try {
+    trStatus('Preparing the translator…');
+    const BATCH = 6;
+    for (let g = 0; g < groups.length; g += BATCH) {
+      const part = groups.slice(g, g + BATCH);
+      const id = ++jobId;
+      const res = await call({ type: 'translate', id, model: target[2], texts: part.map((x) => x.text) }, id);
+      part.forEach((grp, k) => {
+        const n = grp.to - grp.from + 1;
+        const weights = list.slice(grp.from, grp.to + 1).map((c) => c.text.length);
+        const pieces = distribute(res.out[k] || grp.text, weights);
+        for (let i = 0; i < n; i++) list[grp.from + i].text = wrapText(pieces[i] || '', style.chars);
+      });
+      const done = Math.min(groups.length, g + BATCH);
+      trBarSet(done / groups.length * 100);
+      trStatus(`Translating into ${target[1]}… ${done} of ${groups.length} sentences`);
+      cues = list.map((c) => ({ ...c }));
+      renderList(); renderCap();
+    }
+    hist.push(before); fut = [];
+    autosave(); updateButtons();
+    trBarSet(null);
+    trStatus(`Done – ${list.length} lines are now in ${target[1]}. Check them, then save. Ctrl+Z brings the English back.`);
+    if (VOICES[target[0]]) {
+      vc.voice = VOICES[target[0]][0][0]; saveVc(); fillVoices();
+      trStatus($('trStatus').textContent + ` The AI voice is set to ${target[1]}.`);
+    }
+  } catch (e) {
+    if (snapshot() !== before) { hist.push(before); fut = []; }
+    trBarSet(null); trStatus('The translation stopped: ' + e.message);
+  } finally {
+    trBusy = false; $('trBtn').disabled = false; updateButtons();
+  }
+}
+$('trLang').innerHTML = TR_LANGS.map(([code, name]) => `<option value="${code}">${name}</option>`).join('');
+try { $('trLang').value = localStorage.getItem('cp-trlang') || 'vi'; } catch (_) { $('trLang').value = 'vi'; }
+$('trLang').addEventListener('change', () => { try { localStorage.setItem('cp-trlang', $('trLang').value); } catch (_) {} });
+$('trBtn').onclick = translateLines;

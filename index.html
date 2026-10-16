@@ -109,6 +109,17 @@
         </div>
       </div>
 
+      <details id="trCard" class="card tr-card">
+        <summary><strong>🌐 Translate the subtitles</strong> <span class="badge pro-only">PRO</span></summary>
+        <p class="hint">Turn English subtitle lines into another language – for example Vietnamese – and then add an AI voice-over in that language. Is the video in another language? First create subtitles with <b>Subtitles in: English (translate)</b>. Each language downloads once (about 100 MB) and then works offline.</p>
+        <div class="two tr-row">
+          <label class="field">Translate into<select id="trLang"></select></label>
+          <button id="trBtn" class="primary">🌐 Translate lines</button>
+        </div>
+        <div id="trProg" class="bar" hidden><i id="trBar"></i></div>
+        <p id="trStatus" class="hint"></p>
+      </details>
+
       <div class="list-head">
         <h2>Subtitle lines <span id="cueCount" class="muted"></span></h2>
         <div class="list-tools">
@@ -155,6 +166,7 @@
       <li><strong>Accurate and Best quality</strong> – fewer mistakes, better with accents and noise</li>
       <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
       <li><strong>Save a video with captions burned in</strong> – ready for TikTok, Reels and Shorts</li>
+      <li><strong>Translate subtitles</strong> from English into Vietnamese, Spanish, French, German, Chinese, Japanese and 13 more languages</li>
       <li><strong>AI voice-over</strong> – natural voices in 20+ languages read your subtitles aloud; save the video or a WAV file</li>
     </ul>
     <p id="proMsg" class="pro-msg" hidden></p>

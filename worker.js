@@ -5,6 +5,7 @@ env.allowLocalModels = false;
 env.useBrowserCache = true;
 
 let asr = null;
+let mt = null, mtKey = '';
 let loadedKey = '';
 let device = 'wasm';
 
@@ -34,12 +35,28 @@ async function load(model) {
   loadedKey = model + '|' + want;
 }
 
+async function loadMt(model) {
+  if (mt && mtKey === model) return;
+  if (mt && mt.dispose) { try { await mt.dispose(); } catch (_) {} }
+  mt = null;
+  mt = await pipeline('translation', model, { dtype: 'q8', device: 'wasm', progress_callback: (p) => self.postMessage({ type: 'progress', src: 'mt', p }) });
+  mtKey = model;
+}
+
 self.onmessage = async (e) => {
   const m = e.data || {};
   try {
     if (m.type === 'load') {
       await load(m.model);
       self.postMessage({ type: 'ready', device });
+    } else if (m.type === 'translate') {
+      await loadMt(m.model);
+      const out = [];
+      for (const t of m.texts) {
+        const r = await mt(t, { max_new_tokens: 300 });
+        out.push((r && r[0] && r[0].translation_text) || '');
+      }
+      self.postMessage({ type: 'translated', id: m.id, out });
     } else if (m.type === 'run') {
       const opts = { return_timestamps: true, task: m.task || 'transcribe' };
       if (m.language) opts.language = m.language;
