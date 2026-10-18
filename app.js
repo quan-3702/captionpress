@@ -555,13 +555,21 @@ function diarize(embs, durs, opts) {
   if (!k && groups.size > 1) {
     // fold tiny groups (a cough, a laugh, a noise) into the nearest real speaker
     const totalD = w.reduce((a, b) => a + b, 0);
-    const minD = Math.max(6, totalD * 0.03);
+    const minD = Math.max(4, totalD * 0.02);
     const big = [...groups.entries()].filter(([, g]) => g.d >= minD).map(([l]) => l);
     if (big.length) {
+      // a small group with a clearly different voice is kept (someone who says little); a small group close to a big one is noise
+      const keep = new Set(big);
+      for (const [l, g] of groups) {
+        if (keep.has(l) || g.d < 1.5) continue;
+        const near = Math.max(...big.map((b) => dot(g.v, groups.get(b).v)));
+        if (near < 0.3) keep.add(l);
+      }
+      const bigs = [...keep];
       lab = lab.map((l, j) => {
-        if (big.includes(l)) return l;
-        let best = big[0], bs = -Infinity;
-        for (const b of big) { const s = dot(vecs[j], groups.get(b).v); if (s > bs) { bs = s; best = b; } }
+        if (keep.has(l)) return l;
+        let best = bigs[0], bs = -Infinity;
+        for (const b of bigs) { const s = dot(vecs[j], groups.get(b).v); if (s > bs) { bs = s; best = b; } }
         return best;
       });
       groups = cent(lab);
