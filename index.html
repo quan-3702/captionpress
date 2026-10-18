@@ -18,6 +18,7 @@
       <button id="openBtn" class="tb">📂 Open video</button>
       <button id="exportBtn" class="tb" disabled>💾 Save subtitles ▾</button>
       <button id="moreBtn" class="tb">☰ More</button>
+      <button id="recBadge" class="rec-badge" hidden title="Recording – click to see or stop">● REC</button>
       <button id="proBtn" class="pro-btn" hidden>★ Get Pro</button>
     </div>
     <div id="exportMenu" class="menu" hidden>
@@ -31,6 +32,7 @@
       <button data-x="voicewav">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
     </div>
     <div id="menu" class="menu" hidden>
+      <button id="recBtn">🎙 Record a meeting…</button>
       <button id="importBtn">Open a subtitle file (.srt / .vtt)…</button>
       <button id="clearBtn" class="danger">Remove all subtitle lines…</button>
       <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
@@ -48,7 +50,8 @@
           <div class="drop-icon">🎬</div>
           <h1>Subtitles for your video in minutes</h1>
           <p>Drop a video or audio file here, or</p>
-          <button id="dropOpen" class="primary big">Choose a file</button>
+          <div class="drop-btns"><button id="dropOpen" class="primary big">Choose a file</button><button id="dropRec" class="ghost big">🎙 Record a meeting</button></div>
+          <div id="recFound" class="rec-found" hidden><span></span> <button data-r="open" class="primary small">Open it</button> <button data-r="del" class="ghost small">Delete</button></div>
           <p class="hint">The AI runs on this computer. Your video is never uploaded anywhere.</p>
         </div>
       </div>
@@ -63,6 +66,7 @@
           <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Position">
           <button id="back5" class="ghost icon" title="Back 5 seconds">⟲ 5</button>
           <button id="fwd5" class="ghost icon" title="Forward 5 seconds">5 ⟳</button>
+          <button id="markBtn" class="ghost icon" title="Mark this moment as important (M)">★ Mark</button>
         </div>
         <details class="style-box">
           <summary>Caption look</summary>
@@ -136,8 +140,13 @@
         <div id="spkList" class="spk-list" hidden></div>
         <div id="spkTools" class="vc-btns" hidden>
           <button id="spkAdd" class="ghost small">＋ Add person</button>
+          <button id="vbBtn" class="ghost small" title="Remember the named voices so they are recognised in the next meeting">🧠 Remember voices</button>
           <button id="spkDocx" class="ghost small">📄 Save meeting minutes (.docx)</button>
         </div>
+        <p id="vbList" class="hint vb-list"></p>
+        <div id="spkChart" class="spk-chart" hidden></div>
+        <h3 id="starHead" class="star-head">★ Key moments (0)</h3>
+        <div id="starList" class="star-list"></div>
       </details>
 
       <div class="list-head">
@@ -178,6 +187,30 @@
     </div>
   </dialog>
 
+  <dialog id="recDialog" class="dlg">
+    <h2>🎙 Record a meeting</h2>
+    <div id="recSetup">
+      <label class="field">Microphone<select id="recMic"><option value="">Default microphone</option></select></label>
+      <label id="recPcRow" class="check"><input id="recPc" type="checkbox"> Also record the sound of a call on this computer (Zoom, Teams, Google Meet…)</label>
+      <p class="hint">For an online call: when asked what to share, pick <b>Entire screen</b> and switch on <b>Share system audio</b>. Only the sound is recorded, not the screen. Use headphones so the other people are not recorded twice.</p>
+      <p class="hint">Please tell the people in the meeting that you are recording.</p>
+    </div>
+    <div id="recLive" class="rec-live" hidden>
+      <div class="rec-time"><span class="rec-dot"></span><span id="recTime">0:00</span></div>
+      <div class="bar"><i id="recLevel"></i></div>
+      <p id="recSrc" class="hint"></p>
+      <p class="hint">Keep CaptionPress open. The recording is stored safely on this computer as it goes – even if the window closes, it can be opened again.</p>
+    </div>
+    <p id="recMsg" class="hint warn-text"></p>
+    <div class="row-btns">
+      <button id="recStart" class="primary">● Start recording</button>
+      <button id="recPause" class="ghost" hidden>⏸ Pause</button>
+      <button id="recStop" class="primary" hidden>■ Stop and write it down</button>
+      <button id="recHide" class="ghost">Hide</button>
+      <button id="recCancel" class="ghost">Cancel</button>
+    </div>
+  </dialog>
+
   <dialog id="proDialog" class="dlg">
     <h2>CaptionPress Pro</h2>
     <p class="muted">One-time purchase. Yours forever on this Microsoft account.</p>
@@ -187,7 +220,7 @@
       <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
       <li><strong>Save a video with captions burned in</strong> – ready for TikTok, Reels and Shorts</li>
       <li><strong>Translate subtitles</strong> from English into Vietnamese, Spanish, French, German, Chinese, Japanese and 13 more languages</li>
-      <li><strong>Meeting notes</strong> – finds who is speaking, adds names and times, saves Word minutes</li>
+      <li><strong>Meeting notes</strong> – finds who is speaking, remembers voices, talk-time charts, key moments and Word minutes</li>
       <li><strong>AI voice-over</strong> – natural voices in 20+ languages read your subtitles aloud; save the video or a WAV file</li>
     </ul>
     <p id="proMsg" class="pro-msg" hidden></p>

@@ -305,7 +305,7 @@ const round3 = (x) => Math.round(x * 1000) / 1000;
 function tidy(cues) {
   const list = cues
     .filter((c) => c && isFinite(c.start) && isFinite(c.end) && cleanText(c.text))
-    .map((c) => { const o = { start: Math.max(0, c.start), end: Math.max(0, c.end), text: String(c.text).trim() }; if (c.spk != null && c.spk >= 0) o.spk = c.spk; return o; })
+    .map((c) => { const o = { start: Math.max(0, c.start), end: Math.max(0, c.end), text: String(c.text).trim() }; if (c.spk != null && c.spk >= 0) o.spk = c.spk; if (c.star) o.star = true; return o; })
     .sort((a, b) => a.start - b.start);
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -434,6 +434,7 @@ function splitCue(cues, i, pos) {
   const out = cues.slice();
   const x = { start: c.start, end: round3(t), text: wrapText(a) }, y = { start: round3(t), end: c.end, text: wrapText(b) };
   if (c.spk != null) { x.spk = c.spk; y.spk = c.spk; }
+  if (c.star) x.star = true;
   out.splice(i, 1, x, y);
   return out;
 }
@@ -443,6 +444,7 @@ function mergeCue(cues, i) {
   const out = cues.slice();
   const m = { start: a.start, end: b.end, text: wrapText(a.text.replace(/\n/g, ' ') + ' ' + b.text.replace(/\n/g, ' ')) };
   if (a.spk != null) m.spk = a.spk; else if (b.spk != null) m.spk = b.spk;
+  if (a.star || b.star) m.star = true;
   out.splice(i, 2, m);
   return out;
 }
@@ -465,7 +467,9 @@ function rewrapAll(cues, maxChars) {
 }
 
 // ---- Speakers (meeting notes) ----
-const SPK_COLORS = ['#2563eb', '#db2777', '#16a34a', '#ea580c', '#7c3aed', '#0891b2', '#ca8a04', '#dc2626', '#4f46e5', '#059669', '#9333ea', '#65a30d'];
+// validated categorical order (light surface / dark surface)
+const SPK_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+const SPK_COLORS_DARK = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
 // The piece of audio used to recognise the voice in each line (null when the line is too short).
 function speakerPieces(cues, minLen, maxLen) {
   minLen = minLen || 0.5; maxLen = maxLen || 8;
@@ -614,17 +618,54 @@ function speakerTurns(cues) {
   for (const c of cues) {
     const text = c.text.replace(/\n/g, ' ').trim();
     const last = out[out.length - 1];
-    if (last && last.spk === (c.spk == null ? -1 : c.spk) && c.start - last.end < 4) { last.text += ' ' + text; last.end = c.end; }
-    else out.push({ spk: c.spk == null ? -1 : c.spk, start: c.start, end: c.end, text });
+    if (last && !c.star && !last.star && last.spk === (c.spk == null ? -1 : c.spk) && c.start - last.end < 4) { last.text += ' ' + text; last.end = c.end; }
+    else out.push({ spk: c.spk == null ? -1 : c.spk, start: c.start, end: c.end, text, star: !!c.star });
   }
   return out;
 }
 function toTXTSpeakers(cues, names) {
-  return speakerTurns(cues).map((t) => `[${fmtClock(t.start)}] ${t.spk >= 0 ? spkName(names, t.spk) + ': ' : ''}${t.text}`).join('\n\n') + '\n';
+  return speakerTurns(cues).map((t) => `${t.star ? '★ ' : ''}[${fmtClock(t.start)}] ${t.spk >= 0 ? spkName(names, t.spk) + ': ' : ''}${t.text}`).join('\n\n') + '\n';
 }
 function toCSVSpeakers(cues, names) {
   const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
   return 'Start,End,Speaker,Text\r\n' + cues.map((c) => [fmtClock(c.start), fmtClock(c.end), q(c.spk != null && c.spk >= 0 ? spkName(names, c.spk) : ''), q(c.text.replace(/\n/g, ' '))].join(',')).join('\r\n') + '\r\n';
+}
+
+// ---- Remembered voices ----
+// Weighted mean direction of several voice fingerprints.
+function centroid(vecs, weights) {
+  if (!vecs.length) return null;
+  const v = new Float32Array(vecs[0].length);
+  vecs.forEach((x, j) => { const u = unitVec(x), w = weights ? weights[j] : 1; for (let t = 0; t < v.length; t++) v[t] += u[t] * w; });
+  return unitVec(v);
+}
+// Give each found speaker a remembered name when the voice clearly matches (each name used once).
+function matchVoices(cents, bank, threshold) {
+  threshold = threshold == null ? 0.6 : threshold;
+  const pairs = [];
+  cents.forEach((c, i) => { if (!c) return; for (const b of bank) pairs.push([i, b.name, dot(c, unitVec(b.v))]); });
+  pairs.sort((a, b) => b[2] - a[2]);
+  const out = new Array(cents.length).fill(null), used = new Set();
+  for (const [i, name, s] of pairs) {
+    if (s < threshold) break;
+    if (out[i] || used.has(name)) continue;
+    out[i] = { name, score: s }; used.add(name);
+  }
+  return out;
+}
+// Add a voice to the bank (merging with the same name).
+function rememberVoice(bank, name, vec, weight) {
+  const key = String(name).trim();
+  if (!key || !vec) return bank;
+  const list = bank.map((b) => ({ ...b }));
+  const old = list.find((b) => b.name.toLowerCase() === key.toLowerCase());
+  const w = weight || 1;
+  if (old) {
+    const a = unitVec(old.v), v = new Float32Array(a.length), n = old.n || 1;
+    for (let t = 0; t < v.length; t++) v[t] = a[t] * n + vec[t] * w;
+    old.v = Array.from(unitVec(v), (x) => Math.round(x * 1e4) / 1e4); old.n = n + w; old.name = key;
+  } else list.push({ name: key, v: Array.from(unitVec(vec), (x) => Math.round(x * 1e4) / 1e4), n: w });
+  return list;
 }
 
 // ---- Word (.docx) meeting minutes ----
@@ -659,8 +700,8 @@ function wRun(text, o) {
 function wPara(runs, style) { return `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''}${runs}</w:p>`; }
 // meta: { title, date, duration, file }
 const MINUTES_TEXT = {
-  en: { title: 'Meeting minutes', date: 'Date', file: 'Recording', len: 'Length', people: 'Participants', spoke: 'spoke for', actions: 'Decisions and action items', transcript: 'Transcript', foot: 'Made with CaptionPress – transcribed on this computer.' },
-  vi: { title: 'Biên bản cuộc họp', date: 'Ngày', file: 'File ghi âm', len: 'Thời lượng', people: 'Người tham gia', spoke: 'nói', actions: 'Kết luận và việc cần làm', transcript: 'Nội dung chi tiết', foot: 'Tạo bằng CaptionPress – chép lời ngay trên máy tính này.' },
+  en: { title: 'Meeting minutes', date: 'Date', file: 'Recording', len: 'Length', people: 'Participants', spoke: 'spoke for', actions: 'Decisions and action items', transcript: 'Transcript', moments: 'Key moments', charts: 'Who spoke how much', foot: 'Made with CaptionPress – transcribed on this computer.' },
+  vi: { title: 'Biên bản cuộc họp', date: 'Ngày', file: 'File ghi âm', len: 'Thời lượng', people: 'Người tham gia', spoke: 'nói', actions: 'Kết luận và việc cần làm', transcript: 'Nội dung chi tiết', moments: 'Thời điểm quan trọng', charts: 'Thời gian phát biểu', foot: 'Tạo bằng CaptionPress – chép lời ngay trên máy tính này.' },
 };
 function minutesDocx(cues, names, meta) {
   meta = meta || {};
@@ -675,16 +716,33 @@ function minutesDocx(cues, names, meta) {
     body.push(wPara(wRun(L.people), 'Heading1'));
     st.forEach((s, i) => { if (s.lines) body.push(wPara(wRun(spkName(names, i), { b: true, color: SPK_COLORS[i % SPK_COLORS.length] }) + wRun(` – ${L.spoke} ${fmtClock(s.time)}`), 'ListBullet')); });
   }
+  const imgs = (meta.images || []).filter((im) => im && im.data && im.data.length);
+  if (imgs.length) {
+    body.push(wPara(wRun(L.charts), 'Heading1'));
+    imgs.forEach((im, k) => {
+      const cx = 6120000, cy = Math.round(cx * im.h / im.w);
+      body.push(`<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${k + 1}" name="Chart ${k + 1}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${k + 1}" name="chart${k + 1}.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdImg${k + 1}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`);
+    });
+  }
+  const stars = speakerTurns(cues).filter((t) => t.star);
+  if (stars.length) {
+    body.push(wPara(wRun(L.moments), 'Heading1'));
+    for (const t of stars) {
+      const who = t.spk >= 0 ? wRun(spkName(names, t.spk) + ': ', { b: true, color: SPK_COLORS[t.spk % SPK_COLORS.length] }) : '';
+      body.push(wPara(wRun(`★ [${fmtClock(t.start)}]  `, { color: '#b45309', b: true }) + who + wRun(t.text), 'ListBullet'));
+    }
+  }
   body.push(wPara(wRun(L.actions), 'Heading1'));
   for (let i = 0; i < 3; i++) body.push(wPara('', 'ListBullet'));
   body.push(wPara(wRun(L.transcript), 'Heading1'));
   for (const t of speakerTurns(cues)) {
     const who = t.spk >= 0 ? wRun(spkName(names, t.spk) + ': ', { b: true, color: SPK_COLORS[t.spk % SPK_COLORS.length] }) : '';
-    body.push(wPara(wRun(`[${fmtClock(t.start)}]  `, { color: '#6b7280', sz: 18 }) + who + wRun(t.text)));
+    body.push(wPara(wRun(`${t.star ? '★ ' : ''}[${fmtClock(t.start)}]  `, { color: t.star ? '#b45309' : '#6b7280', sz: 18, b: t.star }) + who + wRun(t.text)));
   }
   body.push(wPara(wRun(L.foot, { color: '#9ca3af', sz: 16 })));
   const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
-  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W}><w:body>${body.join('')}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const NS = W + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${body.join('')}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ${W}>
 <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:lang w:val="en-US"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
@@ -693,10 +751,10 @@ function minutesDocx(cues, names, meta) {
 <w:style w:type="paragraph" w:styleId="ListBullet"><w:name w:val="List Bullet"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="60"/></w:pPr></w:style>
 </w:styles>`;
   const numbering = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ${W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
-  const types = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`;
+  const types = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`;
   const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
-  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`;
-  return makeZip([['[Content_Types].xml', types], ['_rels/.rels', rels], ['word/document.xml', doc], ['word/styles.xml', styles], ['word/numbering.xml', numbering], ['word/_rels/document.xml.rels', docRels]]);
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>${imgs.map((_, k) => `<Relationship Id="rIdImg${k + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/chart${k + 1}.png"/>`).join('')}</Relationships>`;
+  return makeZip([['[Content_Types].xml', types], ['_rels/.rels', rels], ['word/document.xml', doc], ['word/styles.xml', styles], ['word/numbering.xml', numbering], ['word/_rels/document.xml.rels', docRels]].concat(imgs.map((im, k) => [`word/media/chart${k + 1}.png`, im.data])));
 }
 
 // ---- Pro rules ----
@@ -715,7 +773,7 @@ if (typeof module !== 'undefined') module.exports = {
   SR, MODELS, LANGS, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
   parseSubs, cueAt, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
-  SPK_COLORS, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, crc32, makeZip, minutesDocx, MINUTES_TEXT,
+  SPK_COLORS, SPK_COLORS_DARK, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, centroid, matchVoices, rememberVoice, crc32, makeZip, minutesDocx, MINUTES_TEXT,
 };
 // ---------- CaptionPress UI ----------
 let file = null, fileUrl = '', cues = [], hist = [], fut = [], active = -1, busy = false;
@@ -776,8 +834,8 @@ function rowWarn(c) {
 function rowHtml(c, i) {
   const w = rowWarn(c);
   const sp = c.spk != null && c.spk >= 0 && spkOn.cached;
-  return `<div class="cue${i === active ? ' on' : ''}${sp ? ' has-spk' : ''}" data-i="${i}"${sp ? ` style="--spk:${spkColor(c.spk)}"` : ''}>
-    <span class="num">${i + 1}</span>
+  return `<div class="cue${i === active ? ' on' : ''}${sp ? ' has-spk' : ''}${c.star ? ' starred' : ''}" data-i="${i}"${sp ? ` style="--spk:${spkColor(c.spk)}"` : ''}>
+    <span class="num">${c.star ? '<b class="star-mark" title="Key moment">★</b>' : ''}${i + 1}</span>
     <div class="meta">
       <input class="t" data-k="start" value="${fmtShort(c.start)}" aria-label="Start time" title="Start time">
       <span class="muted">→</span>
@@ -786,6 +844,7 @@ function rowHtml(c, i) {
       ${w ? `<span class="warn" title="${w}">⚠</span>` : ''}
       <span class="acts">
         <button data-a="play" title="Play this line">▶</button>
+        <button data-a="star" class="${c.star ? 'is-star' : ''}" title="${c.star ? 'Remove the key-moment mark' : 'Mark as a key moment (M)'}">★</button>
         <button data-a="setStart" title="Set start to the current video time">⇤</button>
         <button data-a="setEnd" title="Set end to the current video time">⇥</button>
         <button data-a="split" title="Split into two lines at the cursor">✂</button>
@@ -850,6 +909,7 @@ $('cues').addEventListener('click', (e) => {
   if (!c) return;
   const a = b.dataset.a;
   if (a === 'play') { video.currentTime = c.start + 0.001; video.play(); return; }
+  if (a === 'star') { toggleStar(i); return; }
   if (a === 'setStart' || a === 'setEnd') {
     const t = video.currentTime;
     const next = cues.map((x) => ({ ...x }));
@@ -934,6 +994,12 @@ video.addEventListener('loadedmetadata', () => {
   const ar = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9;
   $('frame').style.aspectRatio = String(ar);
   frameAR = ar; fitFrame();
+  // recordings made in the browser do not say how long they are – ask the browser to find out
+  if (video.duration === Infinity) {
+    const fix = () => { if (isFinite(video.duration)) { video.removeEventListener('durationchange', fix); video.currentTime = 0; updateGenUI(); tick(); if (typeof renderCharts === 'function') renderCharts(); } };
+    video.addEventListener('durationchange', fix);
+    video.currentTime = 1e7;
+  }
   updateGenUI(); tick();
 });
 $('seek').addEventListener('input', () => { seeking = true; if (video.duration) video.currentTime = $('seek').value / 1000 * video.duration; });
@@ -1359,6 +1425,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.code === 'Space' && file) { e.preventDefault(); video.paused ? video.play() : video.pause(); }
   else if (e.key === 'ArrowLeft' && file) video.currentTime = Math.max(0, video.currentTime - 2);
   else if (e.key === 'ArrowRight' && file) video.currentTime += 2;
+  else if (!e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'm' && file) markNow();
 });
 window.addEventListener('beforeunload', () => { clearTimeout(saveTimer); const k = storeKey(); if (k && cues.length) try { localStorage.setItem(k, JSON.stringify({ cues, names: spkNames, t: Date.now() })); } catch (_) {} });
 
@@ -1604,7 +1671,14 @@ $('trBtn').onclick = translateLines;
 let spkNames = [], spkBusy = false, spkDl = {}, lastAudio = null;
 const spkDefault = (i) => (opts.lang === 'vi' ? `Người ${i + 1}` : `Person ${i + 1}`);
 const spkLabel = (i) => (spkNames[i] && spkNames[i].trim()) || spkDefault(i);
-const spkColor = (i) => SPK_COLORS[i % SPK_COLORS.length];
+const darkQ = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : { matches: false };
+const spkColor = (i) => (darkQ.matches ? SPK_COLORS_DARK : SPK_COLORS)[i % SPK_COLORS.length];
+const spkColorPrint = (i) => SPK_COLORS[i % SPK_COLORS.length];
+let spkEmb = new Map(); // line start -> voice fingerprint (this session)
+const embKey = (c) => c.start.toFixed(2);
+let voiceBank = [];
+try { voiceBank = JSON.parse(localStorage.getItem('cp-voicebank') || '[]'); } catch (_) { voiceBank = []; }
+function saveBank() { try { localStorage.setItem('cp-voicebank', JSON.stringify(voiceBank)); } catch (_) {} renderBank(); }
 function spkCount() { return Math.max(spkNames.length, cues.reduce((m, c) => Math.max(m, c.spk == null ? -1 : c.spk), -1) + 1); }
 function spkOn() { return cues.some((c) => c.spk != null && c.spk >= 0); }
 function spkStatus(t) { $('spkStatus').textContent = t || ''; }
@@ -1628,6 +1702,7 @@ function spkSelectHtml(c) {
 }
 
 function renderSpeakers() {
+  renderStars(); renderCharts();
   const n = spkCount();
   const box = $('spkList');
   if (!n) { box.innerHTML = ''; box.hidden = true; $('spkTools').hidden = true; return; }
@@ -1702,12 +1777,21 @@ async function findSpeakers() {
     const k = Number($('spkCountSel').value) || 0;
     const labels = diarize(embs, cues.map((c) => c.end - c.start), { k });
     const n = Math.max(...labels) + 1;
-    if (spkNames.length > n) spkNames = spkNames.slice(0, n);
+    spkEmb = new Map();
+    cues.forEach((c, i) => { if (embs[i]) spkEmb.set(embKey(c), embs[i]); });
+    // recognise people whose voices were remembered before
+    const cents = Array.from({ length: n }, (_, g) => {
+      const idx = labels.map((l, i) => (l === g && embs[i] ? i : -1)).filter((i) => i >= 0);
+      return centroid(idx.map((i) => embs[i]), idx.map((i) => cues[i].end - cues[i].start));
+    });
+    const known = matchVoices(cents, voiceBank, 0.6);
+    spkNames = Array.from({ length: n }, (_, g) => (known[g] ? known[g].name : ''));
     const next = cues.map((c, i) => ({ ...c, spk: labels[i] }));
     commit(next, before);
     renderSpeakers();
     spkBar(null);
-    spkStatus(`Found ${n} ${n === 1 ? 'person' : 'people'}. Type their names below, press ▶ to hear who is who, and fix any line with the name box next to it. Then Save → Meeting minutes (.docx).`);
+    const rec = known.filter(Boolean).map((x) => x.name);
+    spkStatus(`Found ${n} ${n === 1 ? 'person' : 'people'}.${rec.length ? ` Recognised: ${rec.join(', ')}.` : ''} Type the other names, press ▶ to hear who is who, and fix any line with the name box next to it. Then Save → Meeting minutes (.docx).`);
   } catch (e) {
     spkBar(null); spkStatus('Finding speakers stopped: ' + e.message);
   } finally {
@@ -1727,19 +1811,194 @@ function minutesMeta() {
     title: (MINUTES_TEXT[lang] || MINUTES_TEXT.en).title + (file ? ' – ' + baseName() : ''),
   };
 }
-function saveMinutes() {
+async function saveMinutes() {
   const why = limitReason({ speakers: true }, unlocked());
   if (why) { openPro(why); return; }
   if (!cues.length) { toast('Make the subtitle lines first.'); return; }
   const names = Array.from({ length: spkCount() }, (_, i) => spkLabel(i));
-  const data = minutesDocx(cues, names, minutesMeta());
+  const meta = minutesMeta();
+  if (spkOn()) { try { meta.images = [await chartPng(meta.lang)]; } catch (_) { meta.images = []; } }
+  const data = minutesDocx(cues, names, meta);
   download(baseName() + (opts.lang === 'vi' ? ' - bien ban hop.docx' : ' minutes.docx'), new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
-  toast(spkOn() ? 'Meeting minutes saved to your Downloads folder.' : 'Minutes saved. Tip: use “Find speakers” first to add who said what.', 5000);
+  const learnt = spkOn() ? rememberVoices(true) : 0;
+  toast(spkOn() ? `Meeting minutes saved to your Downloads folder.${learnt ? ' Named voices are remembered for next time.' : ''}` : 'Minutes saved. Tip: use “Find speakers” first to add who said what.', 5000);
+}
+
+// ---- remembered voices ----
+function rememberVoices(quiet) {
+  let n = 0;
+  for (let i = 0; i < spkCount(); i++) {
+    const name = (spkNames[i] || '').trim();
+    if (!name) continue;
+    const own = cues.filter((c) => c.spk === i && spkEmb.has(embKey(c)));
+    if (!own.length) continue;
+    const v = centroid(own.map((c) => spkEmb.get(embKey(c))), own.map((c) => c.end - c.start));
+    voiceBank = rememberVoice(voiceBank, name, v, Math.min(60, own.reduce((t, c) => t + c.end - c.start, 0)));
+    n++;
+  }
+  if (n) saveBank();
+  if (!quiet) toast(n ? `${n} ${n === 1 ? 'voice' : 'voices'} remembered. Next time CaptionPress fills in these names by itself.` : 'Type a name for a person first (after Find speakers in this session).', 5000);
+  return n;
+}
+function renderBank() {
+  const box = $('vbList');
+  if (!box) return;
+  box.innerHTML = voiceBank.length
+    ? 'Remembered voices: ' + voiceBank.map((b, i) => `<span class="vb-chip">${esc(b.name)}<button data-vb="${i}" title="Forget this voice" aria-label="Forget ${esc(b.name)}">✕</button></span>`).join(' ')
+    : 'No remembered voices yet. Name the people, then press “Remember voices” – next time CaptionPress recognises them.';
+}
+
+// ---- key moments ----
+function renderStars() {
+  const box = $('starList');
+  const list = cues.map((c, i) => [c, i]).filter(([c]) => c.star);
+  $('starHead').textContent = `★ Key moments (${list.length})`;
+  box.innerHTML = list.length
+    ? list.map(([c, i]) => `<button class="star-item" data-i="${i}"><span class="muted">${fmtClock(c.start)}</span> ${c.spk != null && c.spk >= 0 ? `<b style="color:${spkColor(c.spk)}">●</b> ${esc(spkLabel(c.spk))}: ` : ''}${esc(c.text.replace(/\n/g, ' ').slice(0, 90))}</button>`).join('')
+    : '<p class="hint">Press ★ on a line, or ★ Mark (key M) while listening, to collect the important moments. They go to the top of the Word minutes.</p>';
+}
+
+// ---- charts: talk time + who spoke when ----
+function talkSegments() {
+  const segs = [];
+  for (const c of cues) {
+    if (c.spk == null || c.spk < 0) continue;
+    const last = segs[segs.length - 1];
+    if (last && last.spk === c.spk && c.start - last.end < 1.5) last.end = c.end;
+    else segs.push({ spk: c.spk, start: c.start, end: c.end });
+  }
+  return segs;
+}
+function chartData() {
+  const n = spkCount();
+  const st = speakerStats(cues, n);
+  const total = st.reduce((t, s) => t + s.time, 0) || 1;
+  const order = st.map((s, i) => ({ i, time: s.time, pct: s.time / total * 100, lines: s.lines })).filter((x) => x.lines).sort((a, b) => b.time - a.time);
+  const end = Math.max(isFinite(video.duration) ? video.duration : 0, cues.length ? cues[cues.length - 1].end : 0) || 1;
+  return { order, segs: talkSegments(), end, stars: cues.filter((c) => c.star).map((c) => c.start) };
+}
+function niceTicks(end) {
+  const steps = [30, 60, 120, 300, 600, 900, 1800, 3600];
+  const step = steps.find((s) => end / s <= 6) || 3600;
+  const t = []; for (let x = 0; x <= end + 0.01; x += step) t.push(x);
+  return t;
+}
+function renderCharts() {
+  const box = $('spkChart');
+  if (!spkOn()) { box.hidden = true; box.innerHTML = ''; return; }
+  const d = chartData();
+  box.hidden = false;
+  const bars = d.order.map((x) => `<div class="tt-row" data-tip="${esc(spkLabel(x.i))} · ${fmtClock(x.time)} · ${Math.round(x.pct)}% of the talking · ${x.lines} lines">
+      <span class="tt-name">${esc(spkLabel(x.i))}</span>
+      <span class="tt-track"><i style="width:${Math.max(1.5, x.pct)}%;background:${spkColor(x.i)}"></i></span>
+      <span class="tt-val">${fmtClock(x.time)} · ${Math.round(x.pct)}%</span></div>`).join('');
+  const lanes = d.order.map((x) => `<div class="tl-lane"><span class="tl-name">${esc(spkLabel(x.i))}</span><span class="tl-track">${
+    d.segs.filter((g) => g.spk === x.i).map((g) => `<i data-t="${g.start}" style="left:${g.start / d.end * 100}%;width:max(2px, calc(${(g.end - g.start) / d.end * 100}% - 2px));background:${spkColor(x.i)}" data-tip="${esc(spkLabel(x.i))} · ${fmtClock(g.start)}–${fmtClock(g.end)}"></i>`).join('')}</span></div>`).join('');
+  const starLane = d.stars.length ? `<div class="tl-lane tl-stars"><span class="tl-name">★</span><span class="tl-track">${d.stars.map((t) => `<b data-t="${t}" style="left:${t / d.end * 100}%" data-tip="Key moment · ${fmtClock(t)}">★</b>`).join('')}</span></div>` : '';
+  const ticks = niceTicks(d.end).map((t) => `<span style="left:${t / d.end * 100}%">${fmtClock(t)}</span>`).join('');
+  box.innerHTML = `<h3>Talk time</h3><div class="tt">${bars}</div>
+    <h3>Who spoke when <span class="muted">– click to jump there</span></h3>
+    <div class="tl">${starLane}${lanes}<div class="tl-axis"><span class="tl-name"></span><span class="tl-ticks">${ticks}</span></div><div class="tl-now" id="tlNow"></div></div>`;
+  moveNow();
+}
+function moveNow() {
+  const el = $('tlNow'), tr = document.querySelector('#spkChart .tl-track');
+  if (!el || !tr) return;
+  const d = Math.max(isFinite(video.duration) ? video.duration : 0, cues.length ? cues[cues.length - 1].end : 0) || 1;
+  const box = el.parentElement.getBoundingClientRect(), r = tr.getBoundingClientRect();
+  el.style.left = (r.left - box.left + r.width * Math.min(1, video.currentTime / d)) + 'px';
+}
+video.addEventListener('timeupdate', moveNow);
+$('spkChart').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-t]');
+  if (t) { video.currentTime = Number(t.dataset.t) + 0.001; return; }
+  const tr = e.target.closest('.tl-track');
+  if (tr) { const r = tr.getBoundingClientRect(); video.currentTime = (e.clientX - r.left) / r.width * chartData().end; }
+});
+// one tooltip for all charts
+const vizTip = document.createElement('div'); vizTip.className = 'viz-tip'; vizTip.hidden = true; document.body.appendChild(vizTip);
+$('spkChart').addEventListener('mousemove', (e) => {
+  const t = e.target.closest('[data-tip]');
+  if (!t) { vizTip.hidden = true; return; }
+  vizTip.textContent = t.dataset.tip; vizTip.hidden = false;
+  const w = vizTip.offsetWidth;
+  vizTip.style.left = Math.min(window.innerWidth - w - 8, e.clientX + 12) + 'px';
+  vizTip.style.top = (e.clientY + 14) + 'px';
+});
+$('spkChart').addEventListener('mouseleave', () => (vizTip.hidden = true));
+
+// The same charts drawn on a canvas for the Word file (light colours, 2x for sharp print).
+function chartPng(lang) {
+  const L = MINUTES_TEXT[lang] || MINUTES_TEXT.en;
+  const d = chartData();
+  const S = 2, W = 1000, rowH = 44, nameW = 220, valW = 170, pad = 16;
+  const lanes = d.order.length + (d.stars.length ? 1 : 0);
+  const H = pad + 34 + d.order.length * rowH + 30 + 34 + lanes * 34 + 36 + pad;
+  const cv = document.createElement('canvas'); cv.width = W * S; cv.height = H * S;
+  const g = cv.getContext('2d'); g.scale(S, S);
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+  const font = (w, px) => `${w} ${px}px "Segoe UI", Calibri, Arial, sans-serif`;
+  const fit = (t, max) => { let s = t; while (g.measureText(s).width > max && s.length > 1) s = s.slice(0, -1); return s === t ? t : s.slice(0, -1) + '…'; };
+  const rr = (x, y, w, h, r) => { r = Math.min(r, w / 2, h / 2); g.beginPath(); g.moveTo(x, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r); g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h); g.lineTo(x, y + h); g.closePath(); g.fill(); };
+  let y = pad;
+  g.fillStyle = '#0b0b0b'; g.font = font(700, 22); g.textBaseline = 'middle';
+  g.fillText(lang === 'vi' ? 'Thời gian nói của mỗi người' : 'Talk time', pad, y + 13); y += 34;
+  const trackX = pad + nameW, trackW = W - pad * 2 - nameW - valW;
+  for (const x of d.order) {
+    g.font = font(600, 19); g.fillStyle = '#0b0b0b'; g.fillText(fit(spkLabel(x.i), nameW - 12), pad, y + rowH / 2);
+    g.fillStyle = '#f0efec'; g.fillRect(trackX, y + 9, trackW, rowH - 18);
+    g.fillStyle = spkColorPrint(x.i); rr(trackX, y + 9, Math.max(3, trackW * x.pct / 100), rowH - 18, 4);
+    g.font = font(400, 18); g.fillStyle = '#52514e'; g.fillText(`${fmtClock(x.time)} · ${Math.round(x.pct)}%`, trackX + trackW + 12, y + rowH / 2);
+    y += rowH;
+  }
+  y += 30;
+  g.fillStyle = '#0b0b0b'; g.font = font(700, 22); g.fillText(lang === 'vi' ? 'Ai nói lúc nào' : 'Who spoke when', pad, y + 13); y += 34;
+  const laneH = 34;
+  const lane = (label, draw) => {
+    g.font = font(600, 18); g.fillStyle = '#0b0b0b'; g.fillText(fit(label, nameW - 12), pad, y + laneH / 2);
+    g.fillStyle = '#f6f5f2'; g.fillRect(trackX, y + 5, trackW, laneH - 10);
+    draw(); y += laneH;
+  };
+  if (d.stars.length) lane('★', () => { g.fillStyle = '#b45309'; g.font = font(700, 18); d.stars.forEach((t) => g.fillText('★', trackX + trackW * t / d.end - 7, y + laneH / 2)); });
+  for (const x of d.order) lane(spkLabel(x.i), () => {
+    g.fillStyle = spkColorPrint(x.i);
+    d.segs.filter((s) => s.spk === x.i).forEach((s) => g.fillRect(trackX + trackW * s.start / d.end, y + 5, Math.max(2, trackW * (s.end - s.start) / d.end - 1), laneH - 10));
+  });
+  g.font = font(400, 16); g.fillStyle = '#52514e'; g.textAlign = 'center';
+  niceTicks(d.end).forEach((t) => { const x = trackX + trackW * t / d.end; g.fillRect(x, y, 1, 4); g.fillText(fmtClock(t), Math.min(W - pad - 24, Math.max(trackX + 18, x)), y + 20); });
+  return new Promise((res, rej) => cv.toBlob(async (b) => { if (!b) return rej(new Error('chart')); res({ data: new Uint8Array(await b.arrayBuffer()), w: W, h: H }); }, 'image/png'));
 }
 
 // ---- events ----
 $('spkBtn').onclick = findSpeakers;
 $('spkDocx').onclick = saveMinutes;
+$('vbBtn').onclick = () => { const why = limitReason({ speakers: true }, unlocked()); if (why) { openPro(why); return; } rememberVoices(false); };
+$('vbList').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-vb]');
+  if (!b) return;
+  const i = Number(b.dataset.vb);
+  voiceBank = voiceBank.filter((_, k) => k !== i); saveBank();
+});
+$('starList').addEventListener('click', (e) => {
+  const b = e.target.closest('.star-item');
+  if (b) { const c = cues[Number(b.dataset.i)]; if (c) { video.currentTime = c.start + 0.001; setActive(Number(b.dataset.i)); } }
+});
+function toggleStar(i) {
+  if (i < 0 || !cues[i]) return;
+  const next = cues.map((c) => ({ ...c }));
+  if (next[i].star) delete next[i].star; else next[i].star = true;
+  commit(next);
+  toast(next[i].star ? `★ Marked ${fmtClock(next[i].start)} as a key moment.` : 'Mark removed.');
+}
+function markNow() {
+  if (!cues.length) { toast('Make the subtitle lines first – then mark the important moments.'); return; }
+  let i = cueAt(cues, video.currentTime);
+  if (i < 0) { i = 0; for (let k = 0; k < cues.length; k++) if (cues[k].start <= video.currentTime) i = k; }
+  toggleStar(i);
+}
+$('markBtn').onclick = markNow;
+darkQ.addEventListener && darkQ.addEventListener('change', () => renderList());
+renderBank();
 $('spkAdd').onclick = () => {
   const why = limitReason({ speakers: true }, unlocked());
   if (why) { openPro(why); return; }
@@ -1760,6 +2019,7 @@ $('spkList').addEventListener('change', (e) => {
   if (e.target.matches('.spk-name')) {
     const i = Number(e.target.closest('.spk-row').dataset.s);
     document.querySelectorAll(`#spkList .spk-merge option[value="${i}"]`).forEach((o) => (o.textContent = spkLabel(i)));
+    renderCharts(); renderStars();
     return;
   }
   if (!e.target.matches('.spk-merge') || e.target.value === '') return;
@@ -1798,6 +2058,201 @@ $('cues').addEventListener('change', (e) => {
   renderSpeakers();
 });
 $('lang').addEventListener('change', () => { renderSpeakers(); renderList(); });
+// ---------- Record a meeting ----------
+// Records the microphone (and, if wanted, the sound of a Zoom / Teams / Meet call playing on this computer).
+// Pieces are stored in IndexedDB every few seconds, so a closed window or a crash never loses the meeting.
+const REC_DB = 'captionpress-rec';
+let rec = null; // { mr, ctx, streams, sid, chunks, t0, paused, pausedMs, pauseAt, timer, wake, mime }
+
+function recDb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(REC_DB, 1);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      db.createObjectStore('sessions', { keyPath: 'sid' });
+      const ch = db.createObjectStore('chunks', { autoIncrement: true });
+      ch.createIndex('sid', 'sid');
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function recTx(stores, mode, fn) {
+  const db = await recDb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(stores, mode);
+    let out;
+    Promise.resolve(fn(tx)).then((v) => (out = v));
+    tx.oncomplete = () => { db.close(); res(out); };
+    tx.onerror = () => { db.close(); rej(tx.error); };
+  });
+}
+const idbAll = (req) => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+async function recSaveChunk(sid, blob) { try { await recTx(['chunks'], 'readwrite', (tx) => { tx.objectStore('chunks').add({ sid, blob }); }); } catch (_) {} }
+async function recSessions() { try { return await recTx(['sessions'], 'readonly', (tx) => idbAll(tx.objectStore('sessions').getAll())); } catch (_) { return []; } }
+async function recChunks(sid) { return recTx(['chunks'], 'readonly', (tx) => idbAll(tx.objectStore('chunks').index('sid').getAll(sid))); }
+async function recForget(sid) {
+  try {
+    await recTx(['sessions', 'chunks'], 'readwrite', async (tx) => {
+      tx.objectStore('sessions').delete(sid);
+      const idx = tx.objectStore('chunks').index('sid');
+      const keys = await idbAll(idx.getAllKeys(sid));
+      keys.forEach((k) => tx.objectStore('chunks').delete(k));
+    });
+  } catch (_) {}
+}
+
+function recName(t) {
+  const d = new Date(t), p = (x) => String(x).padStart(2, '0');
+  return `Meeting ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}`;
+}
+function recElapsed() {
+  if (!rec) return 0;
+  const now = rec.paused ? rec.pauseAt : performance.now();
+  return (now - rec.t0 - rec.pausedMs) / 1000;
+}
+function recUi() {
+  const on = !!rec;
+  $('recSetup').hidden = on;
+  $('recLive').hidden = !on;
+  $('recStart').hidden = on;
+  $('recPause').hidden = !on;
+  $('recStop').hidden = !on;
+  $('recCancel').textContent = on ? 'Discard' : 'Cancel';
+  if (on) $('recPause').textContent = rec.paused ? '▶ Continue' : '⏸ Pause';
+  $('recBadge').hidden = !on;
+}
+function openRecorder() {
+  closeMenus();
+  if (busy) { toast('Wait until the subtitles are finished.'); return; }
+  $('recMsg').textContent = '';
+  recUi();
+  fillMics();
+  $('recDialog').showModal();
+}
+async function fillMics() {
+  try {
+    const list = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
+    const keep = $('recMic').value;
+    $('recMic').innerHTML = '<option value="">Default microphone</option>' + list.filter((d) => d.deviceId && d.deviceId !== 'default').map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || 'Microphone ' + (i + 1))}</option>`).join('');
+    if (keep) $('recMic').value = keep;
+  } catch (_) {}
+}
+
+async function startRec() {
+  const withPc = $('recPc').checked;
+  $('recMsg').textContent = '';
+  const streams = [];
+  try {
+    const dev = $('recMic').value;
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: dev ? { exact: dev } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    streams.push(mic);
+    fillMics();
+  } catch (e) {
+    $('recMsg').textContent = 'CaptionPress could not use the microphone. Allow microphone access for CaptionPress in Windows Settings → Privacy & security → Microphone, then try again.';
+    return;
+  }
+  if (withPc) {
+    try {
+      const scr = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { echoCancellation: false, noiseSuppression: false }, systemAudio: 'include' });
+      scr.getVideoTracks().forEach((t) => t.stop());
+      if (!scr.getAudioTracks().length) {
+        $('recMsg').textContent = 'No computer sound was shared. Recording the microphone only. To include the call, choose “Entire screen” and switch on “Share system audio”.';
+      } else streams.push(scr);
+    } catch (_) {
+      $('recMsg').textContent = 'Sharing the computer sound was cancelled. Recording the microphone only.';
+    }
+  }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const dest = ctx.createMediaStreamDestination();
+  const an = ctx.createAnalyser(); an.fftSize = 1024;
+  streams.forEach((s) => { const src = ctx.createMediaStreamSource(new MediaStream(s.getAudioTracks())); src.connect(dest); src.connect(an); });
+  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+  const mr = new MediaRecorder(dest.stream, mime ? { mimeType: mime, audioBitsPerSecond: 64000 } : undefined);
+  const sid = 'r' + Date.now();
+  rec = { mr, ctx, an, streams, sid, chunks: [], t0: performance.now(), paused: false, pausedMs: 0, pauseAt: 0, mime: mr.mimeType || mime || 'audio/webm', started: Date.now() };
+  try { await recTx(['sessions'], 'readwrite', (tx) => { tx.objectStore('sessions').put({ sid, started: rec.started, mime: rec.mime, pc: streams.length > 1 }); }); } catch (_) {}
+  mr.ondataavailable = (e) => { if (e.data && e.data.size) { rec && rec.chunks.push(e.data); recSaveChunk(sid, e.data); } };
+  mr.start(5000);
+  streams.forEach((s) => s.getAudioTracks().forEach((t) => t.addEventListener('ended', () => { if (rec && s !== streams[0]) $('recMsg').textContent = 'The computer sound stopped being shared. The microphone is still recording.'; })));
+  try { rec.wake = await navigator.wakeLock.request('screen'); } catch (_) {}
+  const buf = new Uint8Array(an.fftSize);
+  rec.timer = setInterval(() => {
+    if (!rec) return;
+    $('recTime').textContent = fmtClock(recElapsed());
+    an.getByteTimeDomainData(buf);
+    let peak = 0; for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
+    $('recLevel').style.width = Math.min(100, peak / 128 * 140) + '%';
+    $('recSrc').textContent = streams.length > 1 ? '🎙 Microphone + 🔊 computer sound' : '🎙 Microphone';
+  }, 120);
+  recUi();
+}
+function pauseRec() {
+  if (!rec) return;
+  if (rec.paused) { rec.mr.resume(); rec.pausedMs += performance.now() - rec.pauseAt; rec.paused = false; }
+  else { rec.mr.pause(); rec.pauseAt = performance.now(); rec.paused = true; }
+  recUi();
+}
+function stopTracks(r) {
+  clearInterval(r.timer);
+  r.streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+  try { r.ctx.close(); } catch (_) {}
+  try { r.wake && r.wake.release(); } catch (_) {}
+}
+async function stopRec(discard) {
+  const r = rec;
+  if (!r) { $('recDialog').close(); return; }
+  if (discard && !confirmDiscard()) return;
+  await new Promise((res) => { r.mr.onstop = res; try { r.mr.state !== 'inactive' ? r.mr.stop() : res(); } catch (_) { res(); } });
+  stopTracks(r);
+  rec = null;
+  recUi();
+  $('recDialog').close();
+  if (discard) { recForget(r.sid); toast('Recording discarded.'); return; }
+  await useRecording(r.chunks, r.mime, r.started, r.sid);
+}
+let discardArmed = 0;
+function confirmDiscard() {
+  if (Date.now() - discardArmed < 4000) return true;
+  discardArmed = Date.now();
+  $('recMsg').textContent = 'Press Discard again to throw this recording away.';
+  return false;
+}
+async function useRecording(chunks, mime, started, sid) {
+  if (!chunks.length) { toast('Nothing was recorded.'); recForget(sid); return; }
+  const ext = /ogg/.test(mime) ? 'ogg' : /mp4/.test(mime) ? 'm4a' : 'webm';
+  const f = new File(chunks, `${recName(started)}.${ext}`, { type: mime.split(';')[0], lastModified: started });
+  download(f.name, f);
+  openFile(f);
+  await recForget(sid);
+  toast('Recording saved to your Downloads folder and opened. Press ✨ Create subtitles to write it down.', 7000);
+}
+
+async function checkUnfinished() {
+  const list = await recSessions();
+  if (!list.length || rec) return;
+  const s = list.sort((a, b) => b.started - a.started)[0];
+  let chunks = [];
+  try { chunks = (await recChunks(s.sid)).map((c) => c.blob); } catch (_) {}
+  if (!chunks.length) { recForget(s.sid); return; }
+  const box = $('recFound');
+  box.hidden = false;
+  box.querySelector('span').textContent = `An unfinished recording from ${new Date(s.started).toLocaleString()} was kept safe.`;
+  box.querySelector('[data-r="open"]').onclick = () => { box.hidden = true; useRecording(chunks, s.mime, s.started, s.sid); };
+  box.querySelector('[data-r="del"]').onclick = () => { box.hidden = true; recForget(s.sid); toast('Deleted.'); };
+}
+
+$('recBtn').onclick = $('dropRec').onclick = openRecorder;
+$('recStart').onclick = startRec;
+$('recPause').onclick = pauseRec;
+$('recStop').onclick = () => stopRec(false);
+$('recCancel').onclick = () => stopRec(true);
+$('recBadge').onclick = () => { if (!$('recDialog').open) $('recDialog').showModal(); };
+$('recDialog').addEventListener('cancel', (e) => { if (rec) { e.preventDefault(); $('recDialog').close(); toast('Still recording – press ● REC at the top to see it.'); } });
+$('recHide').onclick = () => { $('recDialog').close(); if (rec) toast('Still recording – press ● REC at the top to see it or stop.'); };
+window.addEventListener('beforeunload', (e) => { if (rec) { e.preventDefault(); e.returnValue = ''; } });
+if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) { $('recPcRow').hidden = true; }
+checkUnfinished();
 // ---------- start ----------
 initStyle();
 setPro(isPro);

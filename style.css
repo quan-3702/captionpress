@@ -136,3 +136,54 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .right > .card, .right > .list-head, .right > .find-bar { flex: none; }
 .cues { min-height: 340px; }
 .spk-list { max-height: 210px; overflow-y: auto; padding-right: 2px; }
+
+/* key moments */
+.cue .star-mark { color: #b45309; margin-right: 2px; }
+.cue.starred { background: color-mix(in srgb, var(--hi) 55%, transparent); }
+.cue .acts button.is-star { color: #b45309; }
+.star-head { font-size: 14px; margin: 4px 0 0; }
+.star-list { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
+.star-item { text-align: left; background: transparent; color: var(--text); border: 1px solid transparent; padding: 5px 8px; font-size: 13px; border-radius: 8px; }
+.star-item:hover { background: var(--accent-2); }
+/* remembered voices */
+.vb-list { line-height: 2; }
+.vb-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 99px; padding: 0 4px 0 10px; color: var(--text); font-size: 12px; }
+.vb-chip button { background: transparent; border: 0; padding: 0 5px; color: var(--muted); font-size: 11px; }
+.vb-chip button:hover { color: var(--danger); }
+/* charts */
+.spk-chart { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px; position: relative; }
+.spk-chart h3 { font-size: 14px; margin: 2px 0 0; }
+.tt { display: flex; flex-direction: column; gap: 6px; }
+.tt-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 92px; gap: 8px; align-items: center; font-size: 13px; cursor: default; }
+.tt-name, .tl-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 600; font-size: 12px; }
+.tt-track { height: 12px; display: block; }
+.tt-track i { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+.tt-val { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; text-align: right; white-space: nowrap; }
+.tl { display: flex; flex-direction: column; gap: 3px; position: relative; }
+.tl-lane, .tl-axis { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center; }
+.tl-track { position: relative; height: 14px; background: var(--bg); border-radius: 3px; cursor: pointer; }
+.tl-track i { position: absolute; top: 0; bottom: 0; border-radius: 2px; min-width: 2px; }
+.tl-track i:hover { outline: 2px solid var(--text); outline-offset: 0; z-index: 1; }
+.tl-stars .tl-track { background: transparent; }
+.tl-stars b { position: absolute; top: -2px; transform: translateX(-50%); color: #b45309; font-size: 13px; line-height: 1; }
+.tl-ticks { position: relative; height: 16px; }
+.tl-ticks span { position: absolute; transform: translateX(-50%); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-ticks span:first-child { transform: none; }
+.tl-ticks span:last-child:not(:first-child) { transform: translateX(-100%); }
+.tl-now { position: absolute; top: 0; bottom: 18px; width: 2px; background: var(--text); opacity: .55; pointer-events: none; }
+.viz-tip { position: fixed; z-index: 50; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.2); pointer-events: none; white-space: nowrap; }
+
+/* recorder */
+.drop-btns { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.ghost.big { padding: 11px 20px; font-size: 16px; font-weight: 600; }
+.rec-found { margin-top: 8px; background: var(--hi); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+.rec-badge { background: #dc2626; color: #fff; font-weight: 700; border: 0; animation: recblink 1.4s infinite; }
+@keyframes recblink { 50% { opacity: .55; } }
+.rec-live { display: flex; flex-direction: column; gap: 8px; }
+.rec-time { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 10px; }
+.rec-dot { width: 14px; height: 14px; border-radius: 50%; background: #dc2626; animation: recblink 1.4s infinite; }
+#recLevel { transition: width .1s; }
+.warn-text { color: #b45309; }
+#recDialog .field { margin-bottom: 10px; }
+#recDialog .check { margin: 6px 0 8px; }
+.tt-track { background: var(--bg); border-radius: 0 4px 4px 0; }
