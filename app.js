@@ -860,9 +860,13 @@ function renderList() {
   const keep = box.scrollTop;
   spkOn.cached = spkOn();
   box.innerHTML = cues.map(rowHtml).join('');
+  fitAreas(box);
   box.scrollTop = keep;
   renderSpeakers();
 }
+function fitArea(ta) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
+function fitAreas(box) { if (!box.offsetParent) return; box.querySelectorAll('textarea').forEach(fitArea); }
+new ResizeObserver(() => fitAreas($('cues'))).observe($('cues'));
 function rowOf(el) { const r = el.closest('.cue'); return r ? Number(r.dataset.i) : -1; }
 
 let editSnap = null;
@@ -873,7 +877,7 @@ $('cues').addEventListener('input', (e) => {
   const i = rowOf(e.target);
   if (i < 0 || !e.target.matches('textarea')) return;
   cues[i].text = e.target.value;
-  e.target.rows = Math.max(1, e.target.value.split('\n').length);
+  fitArea(e.target);
   renderCap(); autosave();
 });
 $('cues').addEventListener('change', (e) => {
