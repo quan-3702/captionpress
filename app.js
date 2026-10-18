@@ -305,7 +305,7 @@ const round3 = (x) => Math.round(x * 1000) / 1000;
 function tidy(cues) {
   const list = cues
     .filter((c) => c && isFinite(c.start) && isFinite(c.end) && cleanText(c.text))
-    .map((c) => ({ start: Math.max(0, c.start), end: Math.max(0, c.end), text: String(c.text).trim() }))
+    .map((c) => { const o = { start: Math.max(0, c.start), end: Math.max(0, c.end), text: String(c.text).trim() }; if (c.spk != null && c.spk >= 0) o.spk = c.spk; return o; })
     .sort((a, b) => a.start - b.start);
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -432,14 +432,18 @@ function splitCue(cues, i, pos) {
   if (!a || !b) return cues;
   const t = c.start + (c.end - c.start) * (a.length / (a.length + b.length));
   const out = cues.slice();
-  out.splice(i, 1, { start: c.start, end: round3(t), text: wrapText(a) }, { start: round3(t), end: c.end, text: wrapText(b) });
+  const x = { start: c.start, end: round3(t), text: wrapText(a) }, y = { start: round3(t), end: c.end, text: wrapText(b) };
+  if (c.spk != null) { x.spk = c.spk; y.spk = c.spk; }
+  out.splice(i, 1, x, y);
   return out;
 }
 function mergeCue(cues, i) {
   if (i < 0 || i >= cues.length - 1) return cues;
   const a = cues[i], b = cues[i + 1];
   const out = cues.slice();
-  out.splice(i, 2, { start: a.start, end: b.end, text: wrapText(a.text.replace(/\n/g, ' ') + ' ' + b.text.replace(/\n/g, ' ')) });
+  const m = { start: a.start, end: b.end, text: wrapText(a.text.replace(/\n/g, ' ') + ' ' + b.text.replace(/\n/g, ' ')) };
+  if (a.spk != null) m.spk = a.spk; else if (b.spk != null) m.spk = b.spk;
+  out.splice(i, 2, m);
   return out;
 }
 function shiftCues(cues, delta, fromIndex) {
@@ -460,6 +464,233 @@ function rewrapAll(cues, maxChars) {
   return cues.map((c) => ({ ...c, text: wrapText(c.text.replace(/\n/g, ' '), maxChars) }));
 }
 
+// ---- Speakers (meeting notes) ----
+const SPK_COLORS = ['#2563eb', '#db2777', '#16a34a', '#ea580c', '#7c3aed', '#0891b2', '#ca8a04', '#dc2626', '#4f46e5', '#059669', '#9333ea', '#65a30d'];
+// The piece of audio used to recognise the voice in each line (null when the line is too short).
+function speakerPieces(cues, minLen, maxLen) {
+  minLen = minLen || 0.5; maxLen = maxLen || 8;
+  return cues.map((c) => {
+    const d = c.end - c.start;
+    if (!(d >= minLen)) return null;
+    if (d <= maxLen) return { start: c.start, end: c.end };
+    const mid = (c.start + c.end) / 2;
+    return { start: mid - maxLen / 2, end: mid + maxLen / 2 };
+  });
+}
+function unitVec(v) {
+  let n = 0; for (let i = 0; i < v.length; i++) n += v[i] * v[i];
+  n = Math.sqrt(n) || 1;
+  const o = new Float32Array(v.length); for (let i = 0; i < v.length; i++) o[i] = v[i] / n;
+  return o;
+}
+function dot(a, b) { let d = 0; for (let i = 0; i < a.length; i++) d += a[i] * b[i]; return d; }
+// Average-linkage agglomerative clustering (nearest-neighbour chain). Returns merges [a, b, similarity].
+function agglomerate(vecs, weights) {
+  const n = vecs.length;
+  const S = new Float32Array(n * n);
+  for (let i = 0; i < n; i++) for (let j = i; j < n; j++) { const s = dot(vecs[i], vecs[j]); S[i * n + j] = s; S[j * n + i] = s; }
+  const size = weights ? weights.slice() : new Array(n).fill(1);
+  const alive = new Uint8Array(n).fill(1);
+  const merges = [];
+  let left = n;
+  const chain = [];
+  while (left > 1) {
+    if (!chain.length) { for (let i = 0; i < n; i++) if (alive[i]) { chain.push(i); break; } }
+    const a = chain[chain.length - 1];
+    const prev = chain.length > 1 ? chain[chain.length - 2] : -1;
+    let best = -1, bs = -Infinity;
+    for (let j = 0; j < n; j++) {
+      if (j === a || !alive[j]) continue;
+      const s = S[a * n + j];
+      if (s > bs || (s === bs && j === prev)) { bs = s; best = j; }
+    }
+    if (best === prev) {
+      chain.pop(); chain.pop();
+      const x = Math.min(a, best), y = Math.max(a, best);
+      merges.push([x, y, bs]);
+      const wx = size[x], wy = size[y];
+      for (let k = 0; k < n; k++) {
+        if (!alive[k] || k === x || k === y) continue;
+        const s = (wx * S[x * n + k] + wy * S[y * n + k]) / (wx + wy);
+        S[x * n + k] = s; S[k * n + x] = s;
+      }
+      size[x] = wx + wy; alive[y] = 0; left--;
+    } else chain.push(best);
+  }
+  return merges;
+}
+// Cut the merge tree: stop at `k` groups, or (k = 0) when groups are less alike than `threshold`.
+function cutTree(n, merges, k, threshold) {
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const sorted = merges.slice().sort((a, b) => b[2] - a[2]);
+  let groups = n;
+  for (const [a, b, s] of sorted) {
+    if (k ? groups <= k : s < threshold) break;
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) { parent[rb] = ra; groups--; }
+  }
+  return Array.from({ length: n }, (_, i) => find(i));
+}
+// embs: one vector (or null) per line; durs: line lengths. opts: { k (0 = automatic), threshold }.
+function diarize(embs, durs, opts) {
+  opts = opts || {};
+  const k = opts.k || 0, threshold = opts.threshold == null ? 0.42 : opts.threshold;
+  const idx = [], vecs = [], w = [];
+  embs.forEach((e, i) => { if (e) { idx.push(i); vecs.push(unitVec(e)); w.push(Math.max(0.5, durs[i] || 1)); } });
+  const labels = new Array(embs.length).fill(-1);
+  if (!idx.length) return labels.map(() => 0);
+  let lab = idx.length === 1 ? [0] : cutTree(idx.length, agglomerate(vecs, w), Math.min(k, idx.length), threshold);
+  // centroids
+  const cent = (labs) => {
+    const m = new Map();
+    labs.forEach((l, j) => {
+      if (!m.has(l)) m.set(l, { v: new Float32Array(vecs[0].length), d: 0 });
+      const g = m.get(l); for (let t = 0; t < g.v.length; t++) g.v[t] += vecs[j][t] * w[j]; g.d += w[j];
+    });
+    for (const g of m.values()) g.v = unitVec(g.v);
+    return m;
+  };
+  let groups = cent(lab);
+  if (!k && groups.size > 1) {
+    // fold tiny groups (a cough, a laugh, a noise) into the nearest real speaker
+    const totalD = w.reduce((a, b) => a + b, 0);
+    const minD = Math.max(6, totalD * 0.03);
+    const big = [...groups.entries()].filter(([, g]) => g.d >= minD).map(([l]) => l);
+    if (big.length) {
+      lab = lab.map((l, j) => {
+        if (big.includes(l)) return l;
+        let best = big[0], bs = -Infinity;
+        for (const b of big) { const s = dot(vecs[j], groups.get(b).v); if (s > bs) { bs = s; best = b; } }
+        return best;
+      });
+      groups = cent(lab);
+    }
+  }
+  // one pass of re-assignment to the closest centre (cleans up early merges)
+  if (groups.size > 1) {
+    lab = lab.map((l, j) => {
+      let best = l, bs = dot(vecs[j], groups.get(l).v);
+      for (const [g, c] of groups) { const s = dot(vecs[j], c.v); if (s > bs + 0.02) { bs = s; best = g; } }
+      return best;
+    });
+  }
+  idx.forEach((i, j) => (labels[i] = lab[j]));
+  // short lines without a voice sample take the neighbour's speaker
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i] >= 0) continue;
+    let p = i - 1; while (p >= 0 && labels[p] < 0) p--;
+    let q = i + 1; while (q < labels.length && labels[q] < 0) q++;
+    labels[i] = p >= 0 ? labels[p] : q < labels.length ? labels[q] : 0;
+  }
+  // a very short line between two lines of the same person is that person too
+  for (let i = 1; i < labels.length - 1; i++) {
+    if ((durs[i] || 0) < 1 && labels[i - 1] === labels[i + 1] && labels[i] !== labels[i - 1]) labels[i] = labels[i - 1];
+  }
+  // number speakers in order of first appearance
+  const order = new Map();
+  return labels.map((l) => { if (!order.has(l)) order.set(l, order.size); return order.get(l); });
+}
+function spkName(names, i) { return (names && names[i]) || `Person ${i + 1}`; }
+function speakerStats(cues, count) {
+  const st = Array.from({ length: count }, () => ({ lines: 0, time: 0, first: -1 }));
+  cues.forEach((c, i) => {
+    if (c.spk == null || c.spk < 0 || c.spk >= count) return;
+    const s = st[c.spk]; s.lines++; s.time += c.end - c.start; if (s.first < 0) s.first = i;
+  });
+  return st;
+}
+// Consecutive lines of the same person become one paragraph.
+function speakerTurns(cues) {
+  const out = [];
+  for (const c of cues) {
+    const text = c.text.replace(/\n/g, ' ').trim();
+    const last = out[out.length - 1];
+    if (last && last.spk === (c.spk == null ? -1 : c.spk) && c.start - last.end < 4) { last.text += ' ' + text; last.end = c.end; }
+    else out.push({ spk: c.spk == null ? -1 : c.spk, start: c.start, end: c.end, text });
+  }
+  return out;
+}
+function toTXTSpeakers(cues, names) {
+  return speakerTurns(cues).map((t) => `[${fmtClock(t.start)}] ${t.spk >= 0 ? spkName(names, t.spk) + ': ' : ''}${t.text}`).join('\n\n') + '\n';
+}
+function toCSVSpeakers(cues, names) {
+  const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+  return 'Start,End,Speaker,Text\r\n' + cues.map((c) => [fmtClock(c.start), fmtClock(c.end), q(c.spk != null && c.spk >= 0 ? spkName(names, c.spk) : ''), q(c.text.replace(/\n/g, ' '))].join(',')).join('\r\n') + '\r\n';
+}
+
+// ---- Word (.docx) meeting minutes ----
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function utf8(s) { return new TextEncoder().encode(s); }
+// Minimal ZIP writer (stored, no compression) – enough for .docx files.
+function makeZip(files) {
+  const parts = [], central = [];
+  let off = 0;
+  const u16 = (v) => [v & 255, (v >>> 8) & 255], u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+  for (const [name, content] of files) {
+    const nb = utf8(name), data = typeof content === 'string' ? utf8(content) : content, crc = crc32(data);
+    const head = [...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0)];
+    parts.push(new Uint8Array(head), nb, data);
+    central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), nb);
+    off += head.length + nb.length + data.length;
+  }
+  const cdSize = central.reduce((n, p) => n + p.length, 0);
+  const end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(off), ...u16(0)]);
+  const all = parts.concat(central, [end]);
+  const out = new Uint8Array(all.reduce((n, p) => n + p.length, 0));
+  let p = 0; for (const a of all) { out.set(a, p); p += a.length; }
+  return out;
+}
+function xmlEsc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ''); }
+function wRun(text, o) {
+  o = o || {};
+  const pr = (o.b ? '<w:b/>' : '') + (o.color ? `<w:color w:val="${o.color.replace('#', '')}"/>` : '') + (o.sz ? `<w:sz w:val="${o.sz}"/>` : '');
+  return `<w:r>${pr ? `<w:rPr>${pr}</w:rPr>` : ''}<w:t xml:space="preserve">${xmlEsc(text)}</w:t></w:r>`;
+}
+function wPara(runs, style) { return `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''}${runs}</w:p>`; }
+// meta: { title, date, duration, file }
+const MINUTES_TEXT = {
+  en: { title: 'Meeting minutes', date: 'Date', file: 'Recording', len: 'Length', people: 'Participants', spoke: 'spoke for', actions: 'Decisions and action items', transcript: 'Transcript', foot: 'Made with CaptionPress – transcribed on this computer.' },
+  vi: { title: 'Biên bản cuộc họp', date: 'Ngày', file: 'File ghi âm', len: 'Thời lượng', people: 'Người tham gia', spoke: 'nói', actions: 'Kết luận và việc cần làm', transcript: 'Nội dung chi tiết', foot: 'Tạo bằng CaptionPress – chép lời ngay trên máy tính này.' },
+};
+function minutesDocx(cues, names, meta) {
+  meta = meta || {};
+  const L = MINUTES_TEXT[meta.lang] || MINUTES_TEXT.en;
+  const count = cues.reduce((m, c) => Math.max(m, c.spk == null ? -1 : c.spk), -1) + 1;
+  const st = speakerStats(cues, count);
+  const body = [];
+  body.push(wPara(wRun(meta.title || L.title), 'Title'));
+  const info = [[L.date, meta.date], [L.file, meta.file], [L.len, meta.duration]].filter((x) => x[1]);
+  info.forEach(([k, v]) => body.push(wPara(wRun(k + ': ', { b: true }) + wRun(v))));
+  if (count) {
+    body.push(wPara(wRun(L.people), 'Heading1'));
+    st.forEach((s, i) => { if (s.lines) body.push(wPara(wRun(spkName(names, i), { b: true, color: SPK_COLORS[i % SPK_COLORS.length] }) + wRun(` – ${L.spoke} ${fmtClock(s.time)}`), 'ListBullet')); });
+  }
+  body.push(wPara(wRun(L.actions), 'Heading1'));
+  for (let i = 0; i < 3; i++) body.push(wPara('', 'ListBullet'));
+  body.push(wPara(wRun(L.transcript), 'Heading1'));
+  for (const t of speakerTurns(cues)) {
+    const who = t.spk >= 0 ? wRun(spkName(names, t.spk) + ': ', { b: true, color: SPK_COLORS[t.spk % SPK_COLORS.length] }) : '';
+    body.push(wPara(wRun(`[${fmtClock(t.start)}]  `, { color: '#6b7280', sz: 18 }) + who + wRun(t.text)));
+  }
+  body.push(wPara(wRun(L.foot, { color: '#9ca3af', sz: 16 })));
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W}><w:body>${body.join('')}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ${W}>
+<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:lang w:val="en-US"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="200"/></w:pPr><w:rPr><w:b/><w:color w:val="0F766E"/><w:sz w:val="40"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="280" w:after="100"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="ListBullet"><w:name w:val="List Bullet"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="60"/></w:pPr></w:style>
+</w:styles>`;
+  const numbering = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ${W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
+  const types = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`;
+  return makeZip([['[Content_Types].xml', types], ['_rels/.rels', rels], ['word/document.xml', doc], ['word/styles.xml', styles], ['word/numbering.xml', numbering], ['word/_rels/document.xml.rels', docRels]]);
+}
+
 // ---- Pro rules ----
 function limitReason(opts, pro) {
   if (pro) return '';
@@ -467,6 +698,7 @@ function limitReason(opts, pro) {
   if (opts.task === 'translate') return 'Translating speech into English subtitles is part of CaptionPress Pro.';
   if (opts.burn) return 'Saving a video with the captions burned in is part of CaptionPress Pro.';
   if (opts.translateTo) return 'Translating subtitles into another language is part of CaptionPress Pro.';
+  if (opts.speakers) return 'Meeting notes – finding who is speaking, naming people and saving Word minutes – is part of CaptionPress Pro.';
   if (opts.voice) return 'AI voice-over – reading your subtitles aloud and saving the video or audio – is part of CaptionPress Pro.';
   return '';
 }
@@ -475,6 +707,7 @@ if (typeof module !== 'undefined') module.exports = {
   SR, MODELS, LANGS, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
   parseSubs, cueAt, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
+  SPK_COLORS, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, crc32, makeZip, minutesDocx, MINUTES_TEXT,
 };
 // ---------- CaptionPress UI ----------
 let file = null, fileUrl = '', cues = [], hist = [], fut = [], active = -1, busy = false;
@@ -496,7 +729,7 @@ function autosave() {
   saveTimer = setTimeout(() => {
     const k = storeKey();
     if (!k) return;
-    try { cues.length ? localStorage.setItem(k, JSON.stringify({ cues, t: Date.now() })) : localStorage.removeItem(k); } catch (_) {}
+    try { cues.length ? localStorage.setItem(k, JSON.stringify({ cues, names: spkNames, t: Date.now() })) : localStorage.removeItem(k); } catch (_) {}
   }, 400);
 }
 
@@ -534,7 +767,8 @@ function rowWarn(c) {
 }
 function rowHtml(c, i) {
   const w = rowWarn(c);
-  return `<div class="cue${i === active ? ' on' : ''}" data-i="${i}">
+  const sp = c.spk != null && c.spk >= 0 && spkOn.cached;
+  return `<div class="cue${i === active ? ' on' : ''}${sp ? ' has-spk' : ''}" data-i="${i}"${sp ? ` style="--spk:${spkColor(c.spk)}"` : ''}>
     <span class="num">${i + 1}</span>
     <div class="meta">
       <input class="t" data-k="start" value="${fmtShort(c.start)}" aria-label="Start time" title="Start time">
@@ -551,14 +785,16 @@ function rowHtml(c, i) {
         <button data-a="del" title="Delete this line">✕</button>
       </span>
     </div>
-    <textarea rows="${Math.max(1, c.text.split('\n').length)}" spellcheck="true" aria-label="Subtitle text ${i + 1}">${esc(c.text)}</textarea>
+    <div class="txt">${spkOn.cached ? spkSelectHtml(c) : ''}<textarea rows="${Math.max(1, c.text.split('\n').length)}" spellcheck="true" aria-label="Subtitle text ${i + 1}">${esc(c.text)}</textarea></div>
   </div>`;
 }
 function renderList() {
   const box = $('cues');
   const keep = box.scrollTop;
+  spkOn.cached = spkOn();
   box.innerHTML = cues.map(rowHtml).join('');
   box.scrollTop = keep;
+  renderSpeakers();
 }
 function rowOf(el) { const r = el.closest('.cue'); return r ? Number(r.dataset.i) : -1; }
 
@@ -723,9 +959,10 @@ function openFile(f) {
   $('fileName').textContent = f.name;
   $('drop').hidden = true; $('player').hidden = false; fitFrame();
   hist = []; fut = []; active = -1;
-  cues = [];
+  cues = []; spkNames = []; lastAudio = null;
   try {
     const saved = JSON.parse(localStorage.getItem(storeKey()) || 'null');
+    if (saved && Array.isArray(saved.names)) spkNames = saved.names.map(String);
     if (saved && Array.isArray(saved.cues) && saved.cues.length) { cues = tidy(saved.cues); toast('Your subtitle lines for this file were restored from last time.'); }
   } catch (_) {}
   renderList(); renderCap(); updateButtons(); updateGenUI();
@@ -752,7 +989,7 @@ function getWorker() {
   worker = new Worker('worker.js', { type: 'module' });
   worker.onmessage = (e) => {
     const m = e.data;
-    if (m.type === 'progress') { if (m.src === 'mt') { if (typeof trProgress === 'function') trProgress(m.p); } else onLoadProgress(m.p); return; }
+    if (m.type === 'progress') { if (m.src === 'mt') trProgress(m.p); else if (m.src === 'spk') spkProgress(m.p); else onLoadProgress(m.p); return; }
     const j = jobs[m.id != null ? m.id : 'load'];
     if (!j) return;
     delete jobs[m.id != null ? m.id : 'load'];
@@ -802,7 +1039,7 @@ async function generate() {
   try {
     setProg(2, 'Reading the sound from your file…');
     let samples;
-    try { samples = await decodeAudio(file); }
+    try { samples = await decodeAudio(file); lastAudio = { f: file, s: samples }; }
     catch (_) { throw new Error('CaptionPress could not read the sound in this file. Try an MP4, MOV, WEBM, MP3, M4A or WAV file.'); }
     if (cancelled) return;
     const total = samples.length / SR;
@@ -961,7 +1198,8 @@ $('exportMenu').addEventListener('click', (e) => {
   if (x === 'srt') download(baseName() + '.srt', '﻿' + toSRT(cues), 'application/x-subrip;charset=utf-8');
   if (x === 'vtt') download(baseName() + '.vtt', toVTT(cues), 'text/vtt;charset=utf-8');
   if (x === 'txt') download(baseName() + ' transcript.txt', toTXT(cues));
-  if (x === 'txts') download(baseName() + ' transcript.txt', toTXTStamped(cues));
+  if (x === 'txts') download(baseName() + ' transcript.txt', spkOn() ? toTXTSpeakers(cues, Array.from({ length: spkCount() }, (_, i) => spkLabel(i))) : toTXTStamped(cues));
+  if (x === 'docx') saveMinutes();
   if (x === 'burn') {
     const why = limitReason({ burn: true }, unlocked());
     if (why) { openPro(why); return; }
@@ -1114,7 +1352,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft' && file) video.currentTime = Math.max(0, video.currentTime - 2);
   else if (e.key === 'ArrowRight' && file) video.currentTime += 2;
 });
-window.addEventListener('beforeunload', () => { clearTimeout(saveTimer); const k = storeKey(); if (k && cues.length) try { localStorage.setItem(k, JSON.stringify({ cues, t: Date.now() })); } catch (_) {} });
+window.addEventListener('beforeunload', () => { clearTimeout(saveTimer); const k = storeKey(); if (k && cues.length) try { localStorage.setItem(k, JSON.stringify({ cues, names: spkNames, t: Date.now() })); } catch (_) {} });
 
 // ---------- Pro ----------
 $('proBtn').onclick = () => { if (!isPro) openPro(); };
@@ -1122,13 +1360,6 @@ $('buyBtn').onclick = buyPro;
 $('restoreBtn').onclick = async () => { proMessage((await checkPro()) ? 'Pro is unlocked. ★' : 'No Pro purchase was found on this Microsoft account.'); };
 $('closePro').onclick = () => $('proDialog').close();
 
-// ---------- start ----------
-initStyle();
-setPro(isPro);
-updateGenUI();
-renderList();
-checkPro().then(() => setPro(isPro));
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 // ---------- AI voice-over (Pro; "Try this voice" is free) ----------
 let vc = { voice: '', speed: 1, orig: 20 };
 try { Object.assign(vc, JSON.parse(localStorage.getItem('cp-voice') || '{}')); } catch (_) {}
@@ -1361,3 +1592,208 @@ $('trLang').innerHTML = TR_LANGS.map(([code, name]) => `<option value="${code}">
 try { $('trLang').value = localStorage.getItem('cp-trlang') || 'vi'; } catch (_) { $('trLang').value = 'vi'; }
 $('trLang').addEventListener('change', () => { try { localStorage.setItem('cp-trlang', $('trLang').value); } catch (_) {} });
 $('trBtn').onclick = translateLines;
+// ---------- Who is speaking – meeting notes (Pro) ----------
+let spkNames = [], spkBusy = false, spkDl = {}, lastAudio = null;
+const spkDefault = (i) => (opts.lang === 'vi' ? `Người ${i + 1}` : `Person ${i + 1}`);
+const spkLabel = (i) => (spkNames[i] && spkNames[i].trim()) || spkDefault(i);
+const spkColor = (i) => SPK_COLORS[i % SPK_COLORS.length];
+function spkCount() { return Math.max(spkNames.length, cues.reduce((m, c) => Math.max(m, c.spk == null ? -1 : c.spk), -1) + 1); }
+function spkOn() { return cues.some((c) => c.spk != null && c.spk >= 0); }
+function spkStatus(t) { $('spkStatus').textContent = t || ''; }
+function spkBar(p) { $('spkProg').hidden = p == null; $('spkBarIn').style.width = (p || 0) + '%'; }
+function spkProgress(p) {
+  if (!p || !p.file || !(p.status === 'progress' || p.status === 'done')) return;
+  spkDl[p.file] = { loaded: p.loaded || (spkDl[p.file] && spkDl[p.file].total) || 0, total: p.total || (spkDl[p.file] && spkDl[p.file].total) || 0 };
+  const all = Object.values(spkDl);
+  const loaded = all.reduce((n, x) => n + (x.loaded || 0), 0), total = all.reduce((n, x) => n + (x.total || 0), 0);
+  if (total > 2e6) spkStatus(`Getting the voice finder ready (first time only) · ${(loaded / 1048576).toFixed(0)} of ${(total / 1048576).toFixed(0)} MB`);
+}
+function saveNames() { autosave(); }
+
+function spkSelectHtml(c) {
+  const n = spkCount();
+  const v = c.spk == null ? -1 : c.spk;
+  let o = `<option value="-1"${v < 0 ? ' selected' : ''}>– who? –</option>`;
+  for (let i = 0; i < n; i++) o += `<option value="${i}"${v === i ? ' selected' : ''}>${esc(spkLabel(i))}</option>`;
+  o += '<option value="new">＋ New person…</option>';
+  return `<select class="spk" aria-label="Speaker" title="Who is speaking" style="--spk:${v >= 0 ? spkColor(v) : 'transparent'}">${o}</select>`;
+}
+
+function renderSpeakers() {
+  const n = spkCount();
+  const box = $('spkList');
+  if (!n) { box.innerHTML = ''; box.hidden = true; $('spkTools').hidden = true; return; }
+  const st = speakerStats(cues, n);
+  box.hidden = false; $('spkTools').hidden = false;
+  box.innerHTML = st.map((s, i) => `<div class="spk-row" data-s="${i}">
+      <span class="dot" style="background:${spkColor(i)}"></span>
+      <input type="text" class="spk-name" value="${esc(spkNames[i] || '')}" placeholder="${esc(spkDefault(i))}" aria-label="Name of ${esc(spkDefault(i))}">
+      <span class="muted spk-info">${s.lines} lines · ${fmtClock(s.time)}</span>
+      <button class="ghost small" data-sa="hear" title="Hear this person's first line" ${s.first < 0 ? 'disabled' : ''}>▶</button>
+      <select class="spk-merge" aria-label="Same person as" title="Is this the same person as someone else? Join them.">
+        <option value="">Same as…</option>
+        ${st.map((_, j) => (j === i ? '' : `<option value="${j}">${esc(spkLabel(j))}</option>`)).join('')}
+      </select>
+    </div>`).join('');
+}
+
+function setNames(next) { spkNames = next; renderSpeakers(); renderList(); autosave(); }
+
+// Join speaker `from` into `into` and renumber the rest.
+function mergeSpeaker(from, into) {
+  const map = (s) => (s == null || s < 0 ? s : s === from ? into : s);
+  let next = cues.map((c) => (c.spk == null ? c : { ...c, spk: map(c.spk) }));
+  const names = spkNames.slice();
+  if (!names[into] && names[from]) names[into] = names[from];
+  names.splice(from, 1);
+  next = next.map((c) => (c.spk == null || c.spk < from ? c : { ...c, spk: c.spk - 1 }));
+  spkNames = names;
+  commit(next);
+  renderSpeakers();
+}
+
+async function audioSamples() {
+  if (lastAudio && lastAudio.f === file) return lastAudio.s;
+  const s = await decodeAudio(file);
+  lastAudio = { f: file, s };
+  return s;
+}
+
+async function findSpeakers() {
+  const why = limitReason({ speakers: true }, unlocked());
+  if (why) { openPro(why); return; }
+  if (!file) { spkStatus('Open the meeting video or audio first.'); return; }
+  if (!cues.length) { spkStatus('First press Create subtitles – then CaptionPress finds who said each line.'); return; }
+  if (spkBusy || busy) return;
+  spkBusy = true; spkDl = {};
+  $('spkBtn').disabled = true;
+  const before = snapshot();
+  try {
+    spkStatus('Reading the sound…'); spkBar(1);
+    const samples = await audioSamples();
+    const pieces = speakerPieces(cues);
+    const embs = new Array(cues.length).fill(null);
+    const todo = pieces.map((p, i) => (p ? i : -1)).filter((i) => i >= 0);
+    const BATCH = 24;
+    const t0 = performance.now();
+    let dev = '';
+    for (let k = 0; k < todo.length; k += BATCH) {
+      const part = todo.slice(k, k + BATCH);
+      const audios = part.map((i) => samples.slice(Math.max(0, Math.round(pieces[i].start * SR)), Math.round(pieces[i].end * SR)));
+      const id = ++jobId;
+      const res = await call({ type: 'embed', id, audios }, id, audios.map((a) => a.buffer));
+      dev = res.device;
+      part.forEach((i, j) => (embs[i] = res.out[j]));
+      const done = Math.min(todo.length, k + BATCH);
+      const spent = (performance.now() - t0) / 1000, left = spent / done * (todo.length - done);
+      spkBar(5 + 90 * done / todo.length);
+      spkStatus(`Listening to the voices… ${done} of ${todo.length} lines${left > 20 ? ` · about ${Math.ceil(left / 60)} min left` : ''}`);
+    }
+    spkStatus('Grouping the voices…');
+    await new Promise((r) => setTimeout(r, 30));
+    const k = Number($('spkCountSel').value) || 0;
+    const labels = diarize(embs, cues.map((c) => c.end - c.start), { k });
+    const n = Math.max(...labels) + 1;
+    if (spkNames.length > n) spkNames = spkNames.slice(0, n);
+    const next = cues.map((c, i) => ({ ...c, spk: labels[i] }));
+    commit(next, before);
+    renderSpeakers();
+    spkBar(null);
+    spkStatus(`Found ${n} ${n === 1 ? 'person' : 'people'}. Type their names below, press ▶ to hear who is who, and fix any line with the name box next to it. Then Save → Meeting minutes (.docx).`);
+  } catch (e) {
+    spkBar(null); spkStatus('Finding speakers stopped: ' + e.message);
+  } finally {
+    spkBusy = false; $('spkBtn').disabled = false; updateButtons();
+  }
+}
+
+function minutesMeta() {
+  const d = new Date(file && file.lastModified ? file.lastModified : Date.now());
+  const pad = (x) => String(x).padStart(2, '0');
+  const lang = opts.lang === 'vi' ? 'vi' : 'en';
+  return {
+    lang,
+    date: lang === 'vi' ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}` : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+    file: file ? file.name : '',
+    duration: isFinite(video.duration) ? fmtClock(video.duration) : '',
+    title: (MINUTES_TEXT[lang] || MINUTES_TEXT.en).title + (file ? ' – ' + baseName() : ''),
+  };
+}
+function saveMinutes() {
+  const why = limitReason({ speakers: true }, unlocked());
+  if (why) { openPro(why); return; }
+  if (!cues.length) { toast('Make the subtitle lines first.'); return; }
+  const names = Array.from({ length: spkCount() }, (_, i) => spkLabel(i));
+  const data = minutesDocx(cues, names, minutesMeta());
+  download(baseName() + (opts.lang === 'vi' ? ' - bien ban hop.docx' : ' minutes.docx'), new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+  toast(spkOn() ? 'Meeting minutes saved to your Downloads folder.' : 'Minutes saved. Tip: use “Find speakers” first to add who said what.', 5000);
+}
+
+// ---- events ----
+$('spkBtn').onclick = findSpeakers;
+$('spkDocx').onclick = saveMinutes;
+$('spkAdd').onclick = () => {
+  const why = limitReason({ speakers: true }, unlocked());
+  if (why) { openPro(why); return; }
+  const n = spkCount();
+  const names = spkNames.slice(); while (names.length < n + 1) names.push('');
+  setNames(names);
+};
+$('spkList').addEventListener('input', (e) => {
+  if (!e.target.matches('.spk-name')) return;
+  const i = Number(e.target.closest('.spk-row').dataset.s);
+  const names = spkNames.slice(); while (names.length <= i) names.push('');
+  names[i] = e.target.value;
+  spkNames = names;
+  document.querySelectorAll('#cues select.spk').forEach((sel) => { const o = sel.querySelector(`option[value="${i}"]`); if (o) o.textContent = spkLabel(i); });
+  autosave();
+});
+$('spkList').addEventListener('change', (e) => {
+  if (e.target.matches('.spk-name')) {
+    const i = Number(e.target.closest('.spk-row').dataset.s);
+    document.querySelectorAll(`#spkList .spk-merge option[value="${i}"]`).forEach((o) => (o.textContent = spkLabel(i)));
+    return;
+  }
+  if (!e.target.matches('.spk-merge') || e.target.value === '') return;
+  const from = Number(e.target.closest('.spk-row').dataset.s), into = Number(e.target.value);
+  mergeSpeaker(Math.max(from, into), Math.min(from, into));
+  toast('Joined. Press Ctrl+Z to undo.');
+});
+$('spkList').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-sa="hear"]');
+  if (!b) return;
+  const i = Number(b.closest('.spk-row').dataset.s);
+  // the longest of this person's first few lines is the best sample
+  const own = cues.map((c, k) => [c, k]).filter(([c]) => c.spk === i).slice(0, 8).sort((a, b2) => (b2[0].end - b2[0].start) - (a[0].end - a[0].start));
+  if (!own.length) return;
+  const c = own[0][0];
+  video.currentTime = c.start + 0.001; video.play();
+  clearTimeout(spkHear); spkHear = setTimeout(() => { if (video.currentTime >= c.end - 0.1) video.pause(); }, (c.end - c.start) * 1000 + 150);
+});
+let spkHear = 0;
+$('cues').addEventListener('change', (e) => {
+  if (!e.target.matches('select.spk')) return;
+  const i = rowOf(e.target);
+  if (i < 0) return;
+  const why = limitReason({ speakers: true }, unlocked());
+  if (why) { openPro(why); renderList(); return; }
+  let v = e.target.value;
+  if (v === 'new') {
+    v = spkCount();
+    const names = spkNames.slice(); while (names.length <= v) names.push('');
+    spkNames = names;
+  }
+  const next = cues.map((c) => ({ ...c }));
+  next[i].spk = Number(v);
+  if (next[i].spk < 0) delete next[i].spk;
+  commit(next);
+  renderSpeakers();
+});
+$('lang').addEventListener('change', () => { renderSpeakers(); renderList(); });
+// ---------- start ----------
+initStyle();
+setPro(isPro);
+updateGenUI();
+renderList();
+checkPro().then(() => setPro(isPro));
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

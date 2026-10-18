@@ -119,3 +119,20 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .tr-card[open] summary { margin-bottom: 4px; }
 .tr-row { align-items: end; }
 .tr-row button { height: 38px; }
+
+/* speakers */
+.cue .txt { display: flex; gap: 6px; align-items: flex-start; min-width: 0; }
+.cue .txt textarea { flex: 1; min-width: 0; }
+.cue.has-spk { border-left: 3px solid var(--spk); }
+.cue select.spk { width: 108px; flex: none; padding: 4px 6px; font-size: 12px; font-weight: 600; border-left: 4px solid var(--spk); text-overflow: ellipsis; }
+.spk-list { display: flex; flex-direction: column; gap: 6px; }
+.spk-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto 96px; gap: 6px; align-items: center; }
+.spk-row .dot { width: 12px; height: 12px; border-radius: 50%; }
+.spk-row .spk-name { padding: 5px 8px; }
+.spk-row .spk-info { font-size: 12px; white-space: nowrap; }
+.spk-row .spk-merge { padding: 4px 6px; font-size: 12px; }
+.spk-row button { padding: 4px 9px; }
+.right { overflow-y: auto; }
+.right > .card, .right > .list-head, .right > .find-bar { flex: none; }
+.cues { min-height: 340px; }
+.spk-list { max-height: 210px; overflow-y: auto; padding-right: 2px; }

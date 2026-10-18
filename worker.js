@@ -1,5 +1,5 @@
 // CaptionPress speech-recognition worker. Runs Whisper on this computer (WebGPU when available, otherwise WebAssembly).
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
+import { pipeline, env, AutoProcessor, AutoModel } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -43,6 +43,20 @@ async function loadMt(model) {
   mtKey = model;
 }
 
+// Voice fingerprints for telling speakers apart (WeSpeaker ResNet34, about 27 MB).
+const SPK_MODEL = 'onnx-community/wespeaker-voxceleb-resnet34-LM';
+let spk = null;
+async function loadSpk() {
+  if (spk) return spk;
+  const progress_callback = (p) => self.postMessage({ type: 'progress', src: 'spk', p });
+  const proc = await AutoProcessor.from_pretrained(SPK_MODEL, { progress_callback });
+  let model = null, dev = 'wasm';
+  if (await hasWebGPU()) { try { model = await AutoModel.from_pretrained(SPK_MODEL, { device: 'webgpu', dtype: 'fp32', progress_callback }); dev = 'webgpu'; } catch (_) { model = null; } }
+  if (!model) model = await AutoModel.from_pretrained(SPK_MODEL, { device: 'wasm', dtype: 'fp32', progress_callback });
+  spk = { proc, model, dev };
+  return spk;
+}
+
 self.onmessage = async (e) => {
   const m = e.data || {};
   try {
@@ -57,6 +71,16 @@ self.onmessage = async (e) => {
         out.push((r && r[0] && r[0].translation_text) || '');
       }
       self.postMessage({ type: 'translated', id: m.id, out });
+    } else if (m.type === 'embed') {
+      const s = await loadSpk();
+      const out = [];
+      for (const a of m.audios) {
+        if (!a || a.length < 8000) { out.push(null); continue; }
+        const o = await s.model(await s.proc(a));
+        const t = o.last_hidden_state || o[Object.keys(o)[0]];
+        out.push(Float32Array.from(t.data));
+      }
+      self.postMessage({ type: 'embedded', id: m.id, out, device: s.dev });
     } else if (m.type === 'run') {
       const opts = { return_timestamps: true, task: m.task || 'transcribe' };
       if (m.language) opts.language = m.language;

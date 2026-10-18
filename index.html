@@ -24,7 +24,8 @@
       <button data-x="srt">SubRip subtitles (.srt) <small>YouTube, Premiere, VLC…</small></button>
       <button data-x="vtt">Web subtitles (.vtt)</button>
       <button data-x="txt">Plain text transcript (.txt)</button>
-      <button data-x="txts">Transcript with times (.txt)</button>
+      <button data-x="txts">Transcript with times (.txt) <small>adds who spoke, if set</small></button>
+      <button data-x="docx">📄 Meeting minutes – Word (.docx) <span class="badge pro-only">PRO</span></button>
       <button data-x="burn">🎬 Video with captions burned in <span class="badge pro-only">PRO</span></button>
       <button data-x="voicevideo">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
       <button data-x="voicewav">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
@@ -120,6 +121,25 @@
         <p id="trStatus" class="hint"></p>
       </details>
 
+      <details id="spkCard" class="card tr-card">
+        <summary><strong>👥 Who is speaking – meeting notes</strong> <span class="badge pro-only">PRO</span></summary>
+        <p class="hint">Turn a meeting recording into written minutes: every line gets a time and the name of the person who said it. CaptionPress tells the voices apart by itself (on this computer – nothing is uploaded), you type the names and fix any line, then save the minutes as a Word file. First press <b>Create subtitles</b>. The voice finder downloads once (about 27 MB).</p>
+        <div class="two tr-row">
+          <label class="field">People in the recording<select id="spkCountSel">
+            <option value="0">Find out automatically</option>
+            <option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option>
+          </select></label>
+          <button id="spkBtn" class="primary">👥 Find speakers</button>
+        </div>
+        <div id="spkProg" class="bar" hidden><i id="spkBarIn"></i></div>
+        <p id="spkStatus" class="hint"></p>
+        <div id="spkList" class="spk-list" hidden></div>
+        <div id="spkTools" class="vc-btns" hidden>
+          <button id="spkAdd" class="ghost small">＋ Add person</button>
+          <button id="spkDocx" class="ghost small">📄 Save meeting minutes (.docx)</button>
+        </div>
+      </details>
+
       <div class="list-head">
         <h2>Subtitle lines <span id="cueCount" class="muted"></span></h2>
         <div class="list-tools">
@@ -167,6 +187,7 @@
       <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
       <li><strong>Save a video with captions burned in</strong> – ready for TikTok, Reels and Shorts</li>
       <li><strong>Translate subtitles</strong> from English into Vietnamese, Spanish, French, German, Chinese, Japanese and 13 more languages</li>
+      <li><strong>Meeting notes</strong> – finds who is speaking, adds names and times, saves Word minutes</li>
       <li><strong>AI voice-over</strong> – natural voices in 20+ languages read your subtitles aloud; save the video or a WAV file</li>
     </ul>
     <p id="proMsg" class="pro-msg" hidden></p>
