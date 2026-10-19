@@ -409,6 +409,59 @@ function parseSubs(text) {
 }
 
 // ---- editing helpers ----
+// ---------- word timing for animated captions ----------
+// Whisper gives a time for each line. Inside a line every word gets a share of the time by its length,
+// with a little extra after a comma or full stop. Edited text keeps working because nothing is stored.
+const CJK = /[぀-ヿ㐀-鿿豈-﫿]/;
+function wordTimes(cue) {
+  const out = [];
+  String((cue && cue.text) || '').split('\n').forEach((ln, li) => {
+    const toks = ln.match(/[぀-ヿ㐀-鿿豈-﫿][、。，！？]?|[^\s぀-ヿ㐀-鿿豈-﫿]+/g) || [];
+    let prevCjk = false;
+    toks.forEach((w, k) => {
+      const cjk = CJK.test(w);
+      out.push({ w, line: li, sp: k > 0 && !(cjk && prevCjk) });
+      prevCjk = cjk;
+    });
+  });
+  if (!out.length) return out;
+  const weight = (w) => {
+    const letters = (w.match(/[\p{L}\p{N}]/gu) || []).length;
+    return Math.max(1, letters) + 1.5 + (/[.,!?;:…、。，！？]$/.test(w) ? 2.5 : 0);
+  };
+  const dur = Math.max(0.05, cue.end - cue.start);
+  const span = dur - Math.min(0.15, dur * 0.1);
+  const ws = out.map((o) => weight(o.w)), tot = ws.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  out.forEach((o, i) => { o.s = cue.start + span * acc / tot; acc += ws[i]; o.e = cue.start + span * acc / tot; });
+  return out;
+}
+// the word being spoken at time t (-1 before the first word)
+function wordAt(words, t) {
+  let k = -1;
+  for (let i = 0; i < words.length; i++) if (words[i].s <= t) k = i; else break;
+  return k;
+}
+// short groups of words for "pop-up words" captions: up to max words, a new group after punctuation
+function popChunks(words, max) {
+  max = max || 3;
+  const out = []; let cur = [];
+  words.forEach((o, i) => {
+    cur.push(i);
+    const letters = cur.reduce((n, j) => n + words[j].w.length, 0);
+    if (cur.length >= max || /[.,!?;:…、。，！？]$/.test(o.w) || letters > 16) { out.push(cur); cur = []; }
+  });
+  if (cur.length) out.push(cur);
+  return out;
+}
+const CAP_PRESETS = {
+  classic: { name: 'Classic', size: 5, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 42, anim: 'none', hl: '#ffd400', font: 'normal', upper: false },
+  tiktok: { name: 'TikTok bold', size: 7, pos: 'middle', color: '#ffffff', bg: 'shadow', chars: 32, anim: 'highlight', hl: '#ffd400', font: 'heavy', upper: true },
+  pop: { name: 'Pop-up words', size: 10, pos: 'middle', color: '#ffffff', bg: 'shadow', chars: 32, anim: 'pop', hl: '#3ee07a', font: 'heavy', upper: true },
+  karaoke: { name: 'Karaoke', size: 6, pos: 'bottom', color: '#ffffff', bg: 'shadow', chars: 42, anim: 'fill', hl: '#33c3ff', font: 'heavy', upper: false },
+  boxed: { name: 'Box highlight', size: 6, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 32, anim: 'highlight', hl: '#ff5ca8', font: 'heavy', upper: false },
+};
+
 function cueAt(cues, t) {
   let lo = 0, hi = cues.length - 1;
   while (lo <= hi) {
@@ -772,12 +825,12 @@ function limitReason(opts, pro) {
 if (typeof module !== 'undefined') module.exports = {
   SR, MODELS, LANGS, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
-  parseSubs, cueAt, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
+  parseSubs, cueAt, wordTimes, wordAt, popChunks, CAP_PRESETS, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
   SPK_COLORS, SPK_COLORS_DARK, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, centroid, matchVoices, rememberVoice, crc32, makeZip, minutesDocx, MINUTES_TEXT,
 };
 // ---------- CaptionPress UI ----------
 let file = null, fileUrl = '', cues = [], hist = [], fut = [], active = -1, busy = false;
-let style = { size: 5, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 42 };
+let style = { size: 5, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 42, anim: 'none', hl: '#ffd400', font: 'normal', upper: false };
 let opts = { lang: '', model: 'fast', task: 'transcribe' };
 try { Object.assign(style, JSON.parse(localStorage.getItem('cp-style') || '{}')); } catch (_) {}
 try { Object.assign(opts, JSON.parse(localStorage.getItem('cp-opts') || '{}')); } catch (_) {}
@@ -948,23 +1001,21 @@ $('cues').addEventListener('dblclick', (e) => {
 // text size follows the picture height, but narrow (vertical) videos use their width so lines still fit
 const capBase = (w, h) => Math.min(h, w * 0.6);
 function capCss() {
-  const span = $('cap').querySelector('span');
-  const h = $('frame').clientHeight || 360, w = $('frame').clientWidth || 640;
-  $('cap').style.fontSize = (capBase(w, h) * style.size / 100) + 'px';
-  $('cap').classList.toggle('top', style.pos === 'top');
-  if (!span) return;
-  span.style.color = style.color;
-  span.style.background = style.bg === 'box' ? 'rgba(0,0,0,.72)' : 'transparent';
-  span.style.textShadow = style.bg === 'shadow'
-    ? '0 0 .12em #000, 0 0 .12em #000, .06em .06em 0 #000, -.06em -.06em 0 #000, .06em -.06em 0 #000, -.06em .06em 0 #000'
-    : (style.bg === 'none' ? '0 1px 3px rgba(0,0,0,.6)' : 'none');
+  const cv = $('capCv');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.round(($('frame').clientWidth || 640) * dpr), h = Math.round(($('frame').clientHeight || 360) * dpr);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  drawCapNow();
+}
+function drawCapNow() {
+  const cv = $('capCv'), ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const t = video.currentTime || 0, i = cueAt(cues, t);
+  if (i >= 0) drawCaption(ctx, cues[i], t, cv.width, cv.height);
 }
 function renderCap() {
-  const i = cueAt(cues, video.currentTime || 0);
-  const c = cues[i];
-  $('cap').innerHTML = c ? `<span>${esc(c.text)}</span>` : '';
   capCss();
-  setActive(i);
+  setActive(cueAt(cues, video.currentTime || 0));
 }
 function setActive(i) {
   if (i === active) return;
@@ -1204,16 +1255,36 @@ $('lang').innerHTML = LANGS.map(([v, n]) => `<option value="${v}">${n}</option>`
 }));
 
 // ---------- style ----------
+const ST_IDS = { stSize: 'size', stPos: 'pos', stColor: 'color', stBg: 'bg', stChars: 'chars', stAnim: 'anim', stHl: 'hl', stFont: 'font' };
 function initStyle() {
-  $('stSize').value = style.size; $('stPos').value = style.pos; $('stColor').value = style.color; $('stBg').value = style.bg; $('stChars').value = String(style.chars);
+  for (const [id, k] of Object.entries(ST_IDS)) $(id).value = String(style[k]);
+  $('stUpper').checked = !!style.upper;
+  $('stHlRow').hidden = style.anim === 'none';
+  document.querySelectorAll('#presets button').forEach((b) => {
+    const p = CAP_PRESETS[b.dataset.p];
+    b.classList.toggle('on', Object.keys(p).every((k) => k === 'name' || k === 'size' || k === 'chars' || style[k] === p[k]));
+  });
 }
-['stSize', 'stPos', 'stColor', 'stBg', 'stChars'].forEach((id) => $(id).addEventListener('input', () => {
+function setStyle(next) {
   const oldChars = style.chars;
-  style = { size: Number($('stSize').value), pos: $('stPos').value, color: $('stColor').value, bg: $('stBg').value, chars: Number($('stChars').value) };
+  style = Object.assign({}, style, next);
   try { localStorage.setItem('cp-style', JSON.stringify(style)); } catch (_) {}
   if (style.chars !== oldChars && cues.length) { commit(rewrapAll(cues, style.chars)); toast('Lines re-wrapped. Ctrl+Z to undo.'); }
+  initStyle();
   renderCap();
+}
+[...Object.keys(ST_IDS), 'stUpper'].forEach((id) => $(id).addEventListener('input', () => {
+  const next = { upper: $('stUpper').checked };
+  for (const [i, k] of Object.entries(ST_IDS)) next[k] = (k === 'size' || k === 'chars') ? Number($(i).value) : $(i).value;
+  setStyle(next);
 }));
+$('presets').innerHTML = Object.entries(CAP_PRESETS).map(([k, p]) => `<button type="button" class="preset" data-p="${k}">${esc(p.name)}</button>`).join('');
+$('presets').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-p]'); if (!b) return;
+  const p = Object.assign({}, CAP_PRESETS[b.dataset.p]); delete p.name;
+  setStyle(p);
+  if (video.paused && cues.length && cueAt(cues, video.currentTime || 0) < 0) video.currentTime = cues[0].start + 0.01;
+});
 
 // ---------- list tools ----------
 $('undoBtn').onclick = undo;
@@ -1297,33 +1368,78 @@ $('exportMenu').addEventListener('click', (e) => {
   }
 });
 
-// ---------- burn-in ----------
-function drawCaption(ctx, text, W, H) {
-  if (!text) return;
+// ---------- caption drawing (the same code for the preview and the saved video) ----------
+function capFont(px) {
+  return style.font === 'heavy'
+    ? `900 ${px}px "Segoe UI Black", "Arial Black", "Segoe UI", system-ui, sans-serif`
+    : `600 ${px}px "Segoe UI", system-ui, sans-serif`;
+}
+function drawCaption(ctx, cue, t, W, H) {
+  if (!cue || !cue.text) return;
   const px = Math.round(capBase(W, H) * style.size / 100);
-  ctx.font = `600 ${px}px "Segoe UI", system-ui, sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const lines = text.split('\n');
-  const lh = px * 1.35;
-  const blockH = lh * lines.length;
-  const top = style.pos === 'top' ? H * 0.07 : H * 0.93 - blockH;
+  const anim = style.anim || 'none';
+  let words = wordTimes(cue);
+  if (!words.length) return;
+  if (style.upper) words.forEach((o) => (o.w = o.w.toLocaleUpperCase()));
+  const cur = anim === 'none' ? -1 : wordAt(words, t);
+  let show = words.map((_, i) => i), popScale = 1;
+  if (anim === 'pop') {
+    const groups = popChunks(words, 3);
+    const g = groups.find((x) => x.includes(Math.max(0, cur))) || groups[0];
+    show = g;
+    const age = t - words[g[0]].s;
+    popScale = age >= 0 && age < 0.12 ? 0.82 + 0.18 * (age / 0.12) : 1;
+  }
+  ctx.save();
+  ctx.font = capFont(px);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const space = ctx.measureText(' ').width;
+  const maxW = W * 0.92;
+  // lay the words out in lines
+  const lines = [];
+  let line = null, lastLine = -1;
+  show.forEach((i) => {
+    const o = words[i], w = ctx.measureText(o.w).width;
+    const gap = line && line.items.length && (anim === 'pop' || o.sp) ? space : 0;
+    const newLine = !line || (anim !== 'pop' && o.line !== lastLine) || line.w + gap + w > maxW;
+    if (newLine) { line = { items: [], w: 0 }; lines.push(line); }
+    const g2 = line.items.length ? gap : 0;
+    line.items.push({ i, x: line.w + g2, w });
+    line.w += g2 + w;
+    lastLine = o.line;
+  });
+  const lh = px * 1.35, blockH = lh * lines.length;
+  const top = style.pos === 'top' ? H * 0.07 : style.pos === 'middle' ? H * 0.62 - blockH / 2 : H * 0.93 - blockH;
+  const ox = W / 2, oy = top + blockH / 2;
+  if (popScale !== 1) { ctx.translate(ox, oy); ctx.scale(popScale, popScale); ctx.translate(-ox, -oy); }
   lines.forEach((ln, k) => {
-    const y = top + lh * k + lh / 2;
-    const w = ctx.measureText(ln).width;
+    const y = top + lh * k + lh / 2, x0 = W / 2 - ln.w / 2;
     if (style.bg === 'box') {
       ctx.fillStyle = 'rgba(0,0,0,.72)';
-      ctx.fillRect(W / 2 - w / 2 - px * 0.35, y - lh / 2, w + px * 0.7, lh);
+      const pad = px * 0.35;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x0 - pad, y - lh / 2, ln.w + pad * 2, lh, px * 0.15); ctx.fill(); }
+      else ctx.fillRect(x0 - pad, y - lh / 2, ln.w + pad * 2, lh);
     }
-    if (style.bg === 'shadow') {
-      ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, px * 0.16); ctx.strokeStyle = '#000';
-      ctx.strokeText(ln, W / 2, y);
-    }
-    if (style.bg === 'none') { ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.12; }
-    ctx.fillStyle = style.color;
-    ctx.fillText(ln, W / 2, y);
-    ctx.shadowBlur = 0;
+    ln.items.forEach((it) => {
+      const o = words[it.i];
+      const on = anim === 'fill' ? it.i <= cur : it.i === cur;
+      const big = on && (anim === 'highlight' || anim === 'pop') ? 1.08 : 1;
+      const cx = x0 + it.x + it.w / 2;
+      ctx.save();
+      ctx.translate(cx, y); if (big !== 1) ctx.scale(big, big);
+      if (style.bg === 'shadow') {
+        ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, px * (style.font === 'heavy' ? 0.2 : 0.16)); ctx.strokeStyle = '#000';
+        ctx.strokeText(o.w, -it.w / 2, 0);
+      }
+      if (style.bg === 'none') { ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.12; }
+      ctx.fillStyle = on ? style.hl : style.color;
+      ctx.fillText(o.w, -it.w / 2, 0);
+      ctx.restore();
+    });
   });
+  ctx.restore();
 }
+// ---------- burn-in ----------
 function pickMime() {
   const list = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return list.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
@@ -1375,7 +1491,7 @@ async function startBurn() {
   const draw = () => {
     if (hasPic) ctx.drawImage(v, 0, 0, W, H); else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
     const i = cueAt(cues, v.currentTime);
-    if (i >= 0 && showCaps) drawCaption(ctx, cues[i].text, W, H);
+    if (i >= 0 && showCaps) drawCaption(ctx, cues[i], v.currentTime, W, H);
     const d = v.duration || 1;
     $('burnBar').style.width = (v.currentTime / d * 100) + '%';
     $('burnText').textContent = `Recording… ${fmtClock(v.currentTime)} of ${fmtClock(d)}. Keep this window open.`;

@@ -53,9 +53,10 @@ body.unlocked .pro-only { display: none; }
 .player { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .frame { position: relative; background: #000; border-radius: 12px; overflow: hidden; margin: 0 auto; width: 100%; aspect-ratio: 16 / 9; }
 .frame video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
-.cap { position: absolute; left: 4%; right: 4%; bottom: 7%; text-align: center; pointer-events: none; container-type: inline-size; }
-.cap.top { bottom: auto; top: 7%; }
-.cap span { display: inline; white-space: pre-line; line-height: 1.35; font-weight: 600; padding: .08em .35em; -webkit-box-decoration-break: clone; box-decoration-break: clone; border-radius: .15em; }
+.cap-cv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.preset { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line, #8886); background: transparent; color: inherit; cursor: pointer; }
+.preset.on { border-color: var(--accent, #2a78d6); background: color-mix(in srgb, var(--accent, #2a78d6) 18%, transparent); font-weight: 600; }
 .transport { display: flex; align-items: center; gap: 8px; }
 .transport input[type=range] { flex: 1; accent-color: var(--accent); }
 .clock { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 118px; }

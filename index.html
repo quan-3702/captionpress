@@ -58,7 +58,7 @@
       <div id="player" class="player" hidden>
         <div id="frame" class="frame">
           <video id="video" playsinline></video>
-          <div id="cap" class="cap"></div>
+          <canvas id="capCv" class="cap-cv"></canvas>
         </div>
         <div class="transport">
           <button id="playBtn" class="ghost icon" title="Play / pause (Ctrl+Space)">▶</button>
@@ -70,14 +70,19 @@
         </div>
         <details class="style-box">
           <summary>Caption look</summary>
+          <div id="presets" class="presets"></div>
           <div class="style-grid">
-            <label class="field">Text size<input id="stSize" type="range" min="3" max="10" step="0.5"></label>
-            <label class="field">Position<select id="stPos"><option value="bottom">Bottom</option><option value="top">Top</option></select></label>
+            <label class="field">Animation<select id="stAnim"><option value="none">None – whole line</option><option value="highlight">Highlight each word</option><option value="fill">Karaoke – fill as spoken</option><option value="pop">Pop-up words (TikTok)</option></select></label>
+            <label id="stHlRow" class="field">Highlight colour<input id="stHl" type="color"></label>
+            <label class="field">Text size<input id="stSize" type="range" min="3" max="12" step="0.5"></label>
+            <label class="field">Position<select id="stPos"><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select></label>
             <label class="field">Text colour<input id="stColor" type="color"></label>
             <label class="field">Background<select id="stBg"><option value="box">Dark box</option><option value="shadow">Outline only</option><option value="none">None</option></select></label>
+            <label class="field">Font<select id="stFont"><option value="normal">Normal</option><option value="heavy">Extra bold</option></select></label>
             <label class="field">Letters per line<select id="stChars"><option value="32">32 – phone / vertical</option><option value="42">42 – standard</option><option value="56">56 – wide</option></select></label>
+            <label class="check"><input id="stUpper" type="checkbox"> CAPITAL LETTERS</label>
           </div>
-          <p class="hint">Used for the preview and for videos saved with captions burned in. SRT and VTT files keep only the words and times.</p>
+          <p class="hint">Used for the preview and for videos saved with captions burned in (Pro) – word animations included, ready for TikTok, Reels and Shorts. SRT and VTT files keep only the words and times.</p>
         </details>
         <details id="voiceBox" class="style-box">
           <summary>🎙 AI voice-over <span class="badge pro-only">PRO</span></summary>
@@ -218,7 +223,7 @@
       <li><strong>Videos of any length</strong> <span class="muted">(Free: the first 10 minutes of each file)</span></li>
       <li><strong>Accurate and Best quality</strong> – fewer mistakes, better with accents and noise</li>
       <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
-      <li><strong>Save a video with captions burned in</strong> – ready for TikTok, Reels and Shorts</li>
+      <li><strong>Save a video with captions burned in</strong> – with animated word-by-word captions (karaoke, pop-up words) for TikTok, Reels and Shorts</li>
       <li><strong>Translate subtitles</strong> from English into Vietnamese, Spanish, French, German, Chinese, Japanese and 13 more languages</li>
       <li><strong>Meeting notes</strong> – finds who is speaking, remembers voices, talk-time charts, key moments and Word minutes</li>
       <li><strong>AI voice-over</strong> – natural voices in 20+ languages read your subtitles aloud; save the video or a WAV file</li>
