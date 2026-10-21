@@ -462,6 +462,66 @@ const CAP_PRESETS = {
   boxed: { name: 'Box highlight', size: 6, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 32, anim: 'highlight', hl: '#ff5ca8', font: 'heavy', upper: false },
 };
 
+// ---------- filler words and pauses ----------
+// "um", "uh" and friends in the main languages; a word is removed only when it stands alone
+const FILLERS = ['um', 'umm', 'uh', 'uhh', 'uhm', 'uhmm', 'er', 'erm', 'ah', 'ahh', 'hmm', 'hm', 'mm', 'mmm', 'eh', 'ehm', 'euh', 'heu', 'äh', 'ähm', 'öhm', 'ehh', 'ờ', 'ờm', 'ừm', 'ừ', 'ơ', 'à', 'ừa', 'em…'];
+const fillerRe = new RegExp('(^|[\\s,(])(' + FILLERS.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?=[\\s,.!?…)]|$)[,.…]*', 'giu');
+function removeFillers(cues) {
+  let count = 0;
+  const out = [];
+  cues.forEach((c) => {
+    let t = String(c.text || '');
+    const before = t;
+    t = t.replace(fillerRe, (m, lead) => { count++; return lead === ',' ? ',' : lead; });
+    t = t.replace(/,(\s*),/g, ',$1'); // tidy doubled commas
+    // "we, uh, need" → "we need": a comma that only fenced the filler goes too
+    if (/\b(um|uh|er|erm|ah|hmm|eh|ờ|ừm|à)\b,/iu.test(before)) t = t.replace(/(\p{L}),\s+(\p{Ll})/gu, (m, a, b, off) => (before.includes(a + ', ' + b) ? m : a + ' ' + b));
+    if (t === before) { out.push(c); return; }
+    t = t.split('\n').map((ln) => ln.replace(/\s{2,}/g, ' ').replace(/^[\s,]+/, '').replace(/\s+([,.!?…])/g, '$1').replace(/,\s*([.!?…])/g, '$1').replace(/,+/g, ',').trim()).filter(Boolean).join('\n');
+    if (t && before.trimStart()[0] && before.trimStart()[0] === before.trimStart()[0].toUpperCase()) t = t.charAt(0).toUpperCase() + t.slice(1);
+    if (t.replace(/[\s,.!?…]/g, '')) out.push(Object.assign({}, c, { text: t }));
+  });
+  return { cues: out, count };
+}
+// Long pauses in the sound: quiet stretches of at least minGap seconds. A little quiet (pad) is kept on each side.
+function findPauses(samples, opts) {
+  opts = opts || {};
+  const minGap = opts.minGap || 0.8, pad = opts.pad == null ? 0.2 : opts.pad, F = Math.round(SR * 0.02);
+  const n = Math.floor(samples.length / F);
+  if (!n) return [];
+  const lv = new Float32Array(n);
+  for (let i = 0; i < n; i++) lv[i] = rms(samples, i * F, i * F + F);
+  const sorted = Array.from(lv).sort((a, b) => a - b);
+  const floor = sorted[Math.floor(n * 0.1)], loud = sorted[Math.floor(n * 0.9)] || 0.01;
+  const th = Math.max(0.003, floor * 2.5, Math.min(loud * 0.08, floor + (loud - floor) * 0.06));
+  const out = [];
+  let s = -1;
+  for (let i = 0; i <= n; i++) {
+    const quiet = i < n && lv[i] < th;
+    if (quiet && s < 0) s = i;
+    if (!quiet && s >= 0) {
+      const a = s * 0.02, b = i * 0.02;
+      if (b - a >= minGap) {
+        const ca = a === 0 ? 0 : a + pad, cb = i === n ? b : b - pad; // keep the start/end of the file trimmed fully
+        if (cb - ca > 0.15) out.push({ start: Math.round(ca * 1000) / 1000, end: Math.round(cb * 1000) / 1000 });
+      }
+      s = -1;
+    }
+  }
+  return out;
+}
+// the parts of the file that stay
+function keepParts(duration, cuts) {
+  const out = []; let t = 0;
+  cuts.forEach((c) => { if (c.start > t + 0.01) out.push({ start: t, end: c.start }); t = Math.max(t, c.end); });
+  if (duration > t + 0.01) out.push({ start: t, end: duration });
+  return out;
+}
+// subtitle times after the pauses are cut out
+function retimeCues(cues, cuts) {
+  const map = (t) => { let d = 0; for (const c of cuts) { if (t >= c.end) d += c.end - c.start; else if (t > c.start) { d += t - c.start; break; } else break; } return Math.round((t - d) * 1000) / 1000; };
+  return cues.map((c) => Object.assign({}, c, { start: map(c.start), end: map(c.end) })).filter((c) => c.end - c.start >= 0.2);
+}
 function cueAt(cues, t) {
   let lo = 0, hi = cues.length - 1;
   while (lo <= hi) {
@@ -818,6 +878,7 @@ function limitReason(opts, pro) {
   if (opts.burn) return 'Saving a video with the captions burned in is part of CaptionPress Pro.';
   if (opts.translateTo) return 'Translating subtitles into another language is part of CaptionPress Pro.';
   if (opts.speakers) return 'Meeting notes – finding who is speaking, naming people and saving Word minutes – is part of CaptionPress Pro.';
+  if (opts.cut) return 'Saving a shorter video with the pauses cut out is part of CaptionPress Pro.';
   if (opts.voice) return 'AI voice-over – reading your subtitles aloud and saving the video or audio – is part of CaptionPress Pro.';
   return '';
 }
@@ -825,7 +886,7 @@ function limitReason(opts, pro) {
 if (typeof module !== 'undefined') module.exports = {
   SR, MODELS, LANGS, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
-  parseSubs, cueAt, wordTimes, wordAt, popChunks, CAP_PRESETS, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
+  parseSubs, cueAt, removeFillers, findPauses, keepParts, retimeCues, wordTimes, wordAt, popChunks, CAP_PRESETS, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
   SPK_COLORS, SPK_COLORS_DARK, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, centroid, matchVoices, rememberVoice, crc32, makeZip, minutesDocx, MINUTES_TEXT,
 };
 // ---------- CaptionPress UI ----------
@@ -869,6 +930,7 @@ function updateButtons() {
   $('redoBtn').disabled = !fut.length;
   $('exportBtn').disabled = !cues.length;
   $('addBtn').disabled = !file;
+  $('fillerBtn').disabled = !cues.length;
   $('cueCount').textContent = cues.length ? `(${cues.length})` : '';
   $('emptyList').hidden = cues.length > 0;
   $('cues').hidden = !cues.length;
@@ -1349,6 +1411,7 @@ $('exportMenu').addEventListener('click', (e) => {
   if (x === 'txt') download(baseName() + ' transcript.txt', toTXT(cues));
   if (x === 'txts') download(baseName() + ' transcript.txt', spkOn() ? toTXTSpeakers(cues, Array.from({ length: spkCount() }, (_, i) => spkLabel(i))) : toTXTStamped(cues));
   if (x === 'docx') saveMinutes();
+  if (x === 'cut') { if (!file) { toast('Open a video or recording first.'); return; } openCut(); return; }
   if (x === 'burn') {
     const why = limitReason({ burn: true }, unlocked());
     if (why) { openPro(why); return; }
@@ -1525,6 +1588,109 @@ $('burnClose').onclick = () => {
   if (burn) { burn.stop = true; burn.v.pause(); if (burn.end) burn.end(); }
   $('burnDialog').close();
 };
+
+
+// ---------- filler words & pauses ----------
+$('fillerBtn').onclick = () => {
+  const r = removeFillers(cues);
+  if (!r.count) { toast('No um, uh or other filler words were found.'); return; }
+  commit(r.cues);
+  toast(`Removed ${r.count} filler word${r.count > 1 ? 's' : ''}. Ctrl+Z to undo.`);
+};
+let cutPlan = null, cutJob = null;
+async function openCut() {
+  $('cutInfo').textContent = ''; $('cutText').textContent = 'Listening for pauses…'; $('cutBar').style.width = '0';
+  $('cutStart').disabled = true; $('cutSubs').hidden = true; $('cutClose').textContent = 'Cancel';
+  $('cutCapsRow').hidden = !cues.length;
+  $('cutDialog').showModal();
+  await planCut();
+}
+async function planCut() {
+  try {
+    const samples = lastAudio && lastAudio.f === file ? lastAudio.s : await decodeAudio(file);
+    lastAudio = { f: file, s: samples };
+    const dur = samples.length / SR;
+    const cuts = findPauses(samples, { minGap: Number($('cutGap').value) });
+    const saved = cuts.reduce((n, c) => n + c.end - c.start, 0);
+    cutPlan = { cuts, keep: keepParts(video.duration && isFinite(video.duration) ? video.duration : dur, cuts), dur, saved };
+    $('cutInfo').textContent = cuts.length ? `${cuts.length} pause${cuts.length > 1 ? 's' : ''} found – ${fmtClock(saved)} shorter. The new video is ${fmtClock(dur - saved)} instead of ${fmtClock(dur)}.` : 'No long pauses were found. Try a shorter pause length.';
+    $('cutText').textContent = cuts.length ? 'Saving plays the video once with the pauses skipped, so it takes about as long as the new video.' : '';
+    $('cutStart').disabled = !cuts.length;
+  } catch (e) { $('cutText').textContent = 'The sound could not be read: ' + e.message; }
+}
+async function startCut() {
+  if (!cutPlan || !cutPlan.cuts.length) return;
+  const why = limitReason({ cut: true }, unlocked());
+  if (why) { $('cutDialog').close(); openPro(why); return; }
+  const mime = pickMime();
+  if (!mime) { $('cutText').textContent = 'Recording video is not supported on this computer.'; return; }
+  video.pause();
+  $('cutStart').disabled = true; $('cutGap').disabled = true;
+  const showCaps = $('cutCaps').checked && cues.length > 0;
+  const v = document.createElement('video');
+  v.src = fileUrl; v.playsInline = true; v.preload = 'auto';
+  await new Promise((r, j) => { v.onloadedmetadata = r; v.onerror = () => j(new Error('The video could not be opened.')); });
+  const hasPic = v.videoWidth > 0;
+  let W = hasPic ? v.videoWidth : 1280, H = hasPic ? v.videoHeight : 720;
+  if (W > 1920) { H = Math.round(H * 1920 / W); W = 1920; }
+  W -= W % 2; H -= H % 2;
+  const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const ac = new AudioContext(); try { await ac.resume(); } catch (_) {}
+  const src = ac.createMediaElementSource(v), dest = ac.createMediaStreamDestination();
+  src.connect(dest);
+  const audioOnly = !hasPic && !showCaps;
+  const amime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
+  const tracks = audioOnly ? dest.stream.getAudioTracks() : [...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()];
+  const rec = new MediaRecorder(new MediaStream(tracks), audioOnly ? (amime ? { mimeType: amime } : undefined) : { mimeType: mime, videoBitsPerSecond: Math.min(12e6, Math.max(2.5e6, W * H * 4)) });
+  const parts = []; rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+  cutJob = { v, rec, ac, stop: false };
+  const total = cutPlan.keep.reduce((n, k) => n + k.end - k.start, 0); let doneT = 0;
+  const draw = () => {
+    if (hasPic) ctx.drawImage(v, 0, 0, W, H); else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
+    const i = cueAt(cues, v.currentTime);
+    if (i >= 0 && showCaps) drawCaption(ctx, cues[i], v.currentTime, W, H);
+  };
+  const done = new Promise((r) => { rec.onstop = r; });
+  let started = false;
+  for (const k of cutPlan.keep) {
+    if (cutJob.stop) break;
+    v.currentTime = k.start;
+    await new Promise((r) => { v.onseeked = r; });
+    draw();
+    if (!started) { rec.start(1000); started = true; } else rec.resume();
+    await v.play();
+    await new Promise((r) => {
+      const step = () => {
+        if (cutJob.stop || v.ended || v.currentTime >= k.end - 0.02) { r(); return; }
+        draw();
+        $('cutBar').style.width = Math.min(100, (doneT + v.currentTime - k.start) / total * 100) + '%';
+        $('cutText').textContent = `Saving… ${fmtClock(doneT + v.currentTime - k.start)} of ${fmtClock(total)}. Keep this window open.`;
+        setTimeout(step, 30); // a timer, not the frame callback: that one stops at the end of the video
+      };
+      step();
+    });
+    v.pause(); draw();
+    if (rec.state === 'recording') rec.pause();
+    doneT += k.end - k.start;
+  }
+  if (rec.state !== 'inactive') rec.stop();
+  await done; ac.close();
+  const stopped = cutJob.stop; cutJob = null; $('cutGap').disabled = false;
+  if (stopped) return;
+  const type = (audioOnly ? (amime || 'audio/webm') : mime).split(';')[0];
+  const ext = type === 'video/mp4' ? 'mp4' : type === 'audio/mp4' ? 'm4a' : 'webm';
+  const name = `${baseName()} – pauses cut.${ext}`;
+  download(name, new Blob(parts, { type }));
+  $('cutBar').style.width = '100%';
+  $('cutText').textContent = `Saved “${name}” to your Downloads folder.` + (cues.length ? ' Want subtitles for the new video? Click “Move subtitle times to match”, then save the SRT.' : '');
+  $('cutSubs').hidden = !cues.length; $('cutClose').textContent = 'Close';
+}
+$('cutGap').onchange = planCut;
+$('cutMenuBtn').onclick = () => { closeMenus(); if (!file) { toast('Open a video or recording first.'); return; } openCut(); };
+$('cutStart').onclick = () => startCut().catch((e) => { $('cutText').textContent = e.message; $('cutGap').disabled = false; });
+$('cutSubs').onclick = () => { if (!cutPlan) return; commit(retimeCues(cues, cutPlan.cuts)); $('cutSubs').hidden = true; toast('Subtitle times now match the shorter video. Ctrl+Z to undo.', 6000); };
+$('cutClose').onclick = () => { if (cutJob) { cutJob.stop = true; cutJob.v.pause(); } $('cutDialog').close(); };
 
 // ---------- menus & keys ----------
 function closeMenus() { $('menu').hidden = true; $('exportMenu').hidden = true; }

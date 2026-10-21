@@ -28,11 +28,13 @@
       <button data-x="txts">Transcript with times (.txt) <small>adds who spoke, if set</small></button>
       <button data-x="docx">📄 Meeting minutes – Word (.docx) <span class="badge pro-only">PRO</span></button>
       <button data-x="burn">🎬 Video with captions burned in <span class="badge pro-only">PRO</span></button>
+      <button data-x="cut">✂ Shorter video – long pauses cut out <span class="badge pro-only">PRO</span></button>
       <button data-x="voicevideo">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
       <button data-x="voicewav">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
     </div>
     <div id="menu" class="menu" hidden>
       <button id="recBtn">🎙 Record a meeting…</button>
+      <button id="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
       <button id="importBtn">Open a subtitle file (.srt / .vtt)…</button>
       <button id="clearBtn" class="danger">Remove all subtitle lines…</button>
       <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
@@ -162,6 +164,7 @@
           <button id="addBtn" class="ghost small" title="Add a line at the current time" disabled>＋ Line</button>
           <button id="findBtn" class="ghost small" title="Find and replace (Ctrl+H)">🔎</button>
           <button id="shiftBtn" class="ghost small" title="Move all times earlier or later">⇄ Timing</button>
+          <button id="fillerBtn" class="ghost small" title="Remove um, uh and other filler words from the subtitles" disabled>✂ Ums</button>
         </div>
       </div>
       <div id="findBar" class="find-bar" hidden>
@@ -189,6 +192,21 @@
     <div class="row-btns">
       <button id="burnStart" class="primary">Start</button>
       <button id="burnClose" class="ghost">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog id="cutDialog" class="dlg">
+    <h2>✂ Cut out the long pauses</h2>
+    <p class="muted">CaptionPress finds the quiet moments between sentences and saves a shorter, snappier video – great for lessons, talking-head videos, podcasts and meetings.</p>
+    <label class="field">Cut pauses longer than<select id="cutGap"><option value="0.5">0.5 seconds – fast and punchy</option><option value="0.8" selected>0.8 seconds – natural</option><option value="1.2">1.2 seconds – only long pauses</option><option value="2">2 seconds – only very long pauses</option></select></label>
+    <label id="cutCapsRow" class="check"><input id="cutCaps" type="checkbox" checked> Show the captions on the video</label>
+    <p id="cutInfo" class="cut-info"></p>
+    <div class="bar"><i id="cutBar"></i></div>
+    <p id="cutText" class="hint"></p>
+    <div class="row-btns">
+      <button id="cutStart" class="primary" disabled>Save shorter video</button>
+      <button id="cutSubs" class="ghost" hidden>Move subtitle times to match</button>
+      <button id="cutClose" class="ghost">Cancel</button>
     </div>
   </dialog>
 
@@ -223,6 +241,7 @@
       <li><strong>Videos of any length</strong> <span class="muted">(Free: the first 10 minutes of each file)</span></li>
       <li><strong>Accurate and Best quality</strong> – fewer mistakes, better with accents and noise</li>
       <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
+      <li><strong>Cut out long pauses</strong> – save a shorter, snappier video in one click</li>
       <li><strong>Save a video with captions burned in</strong> – with animated word-by-word captions (karaoke, pop-up words) for TikTok, Reels and Shorts</li>
       <li><strong>Translate subtitles</strong> from English into Vietnamese, Spanish, French, German, Chinese, Japanese and 13 more languages</li>
       <li><strong>Meeting notes</strong> – finds who is speaking, remembers voices, talk-time charts, key moments and Word minutes</li>
