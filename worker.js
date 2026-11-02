@@ -13,22 +13,23 @@ async function hasWebGPU() {
   try { return !!(self.navigator.gpu && (await self.navigator.gpu.requestAdapter())); } catch (_) { return false; }
 }
 
-async function load(model) {
+async function load(model, big) {
   const want = (await hasWebGPU()) ? 'webgpu' : 'wasm';
+  if (big && want !== 'webgpu') throw new Error('The “Most accurate” quality needs a graphics card (WebGPU), which this computer does not offer. Choose “Very accurate” instead.');
   const key = model + '|' + want;
   if (asr && loadedKey === key) return;
   if (asr && asr.dispose) { try { await asr.dispose(); } catch (_) {} }
   asr = null;
   const progress_callback = (p) => self.postMessage({ type: 'progress', p });
   const attempt = async (dev) => {
-    const dtype = dev === 'webgpu' ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8';
+    const dtype = big ? { encoder_model: 'q4', decoder_model_merged: 'q4' } : dev === 'webgpu' ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8';
     return pipeline('automatic-speech-recognition', model, { device: dev, dtype, progress_callback });
   };
   try {
     asr = await attempt(want);
     device = want;
   } catch (err) {
-    if (want !== 'webgpu') throw err;
+    if (want !== 'webgpu' || big) throw err;
     asr = await attempt('wasm');
     device = 'wasm';
   }
@@ -61,7 +62,7 @@ self.onmessage = async (e) => {
   const m = e.data || {};
   try {
     if (m.type === 'load') {
-      await load(m.model);
+      await load(m.model, !!m.big);
       self.postMessage({ type: 'ready', device });
     } else if (m.type === 'translate') {
       await loadMt(m.model);
@@ -82,10 +83,16 @@ self.onmessage = async (e) => {
       }
       self.postMessage({ type: 'embedded', id: m.id, out, device: s.dev });
     } else if (m.type === 'run') {
-      const opts = { return_timestamps: true, task: m.task || 'transcribe' };
+      const opts = { return_timestamps: m.words ? 'word' : true, task: m.task || 'transcribe' };
       if (m.language) opts.language = m.language;
-      const out = await asr(m.audio, opts);
-      self.postMessage({ type: 'result', id: m.id, chunks: out.chunks || [], text: out.text || '' });
+      let out, words = !!m.words;
+      try { out = await asr(m.audio, opts); }
+      catch (err) {
+        if (!words) throw err;
+        words = false; opts.return_timestamps = true; // model without word timing: fall back to sentence timing
+        out = await asr(m.audio, opts);
+      }
+      self.postMessage({ type: 'result', id: m.id, chunks: out.chunks || [], text: out.text || '', words });
     }
   } catch (err) {
     self.postMessage({ type: 'error', id: m.id, message: String((err && err.message) || err) });

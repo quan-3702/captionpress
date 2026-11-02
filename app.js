@@ -81,10 +81,12 @@ function needsPro(reason) {
 // ---------- CaptionPress core: pure functions (no DOM) ----------
 const SR = 16000; // Whisper sample rate
 
+// "_timestamped" exports can time every single word, which keeps subtitles in sync with the speech.
 const MODELS = {
-  fast: { id: 'onnx-community/whisper-tiny', name: 'Fast', size: '≈ 80 MB', pro: false },
-  accurate: { id: 'onnx-community/whisper-base', name: 'Accurate', size: '≈ 150 MB', pro: true },
-  best: { id: 'onnx-community/whisper-small', name: 'Best', size: '≈ 500 MB', pro: true },
+  fast: { id: 'onnx-community/whisper-tiny_timestamped', name: 'Fast', size: '≈ 80 MB', pro: false },
+  accurate: { id: 'onnx-community/whisper-base_timestamped', name: 'Accurate', size: '≈ 150 MB', pro: true },
+  best: { id: 'onnx-community/whisper-small_timestamped', name: 'Very accurate', size: '≈ 500 MB', pro: true },
+  turbo: { id: 'onnx-community/whisper-large-v3-turbo_timestamped', name: 'Most accurate, all languages (needs a graphics card)', size: '≈ 750 MB', pro: true, gpu: true },
 };
 
 const LANGS = [
@@ -301,6 +303,91 @@ function segmentsToCues(segs, maxChars) {
 }
 const round3 = (x) => Math.round(x * 1000) / 1000;
 
+// Whisper word timestamps (relative to the window) -> subtitle cues.
+// A new line starts after a sentence, after a pause, or when the line gets too long or too slow to read.
+function wordsToCues(chunks, offset, windowEnd, maxChars, samples) {
+  maxChars = maxChars || 42;
+  const limit = maxChars * 2;
+  const words = [];
+  let last = 0;
+  for (const c of chunks || []) {
+    const ts = c.timestamp || [];
+    let s = ts[0], e = ts[1];
+    if (s == null || !isFinite(s)) s = last;
+    if (e == null || !isFinite(e) || e < s) e = s + 0.3;
+    e = Math.min(e, windowEnd - offset);
+    last = e;
+    if (!String(c.text || '').trim()) continue;
+    words.push({ s: offset + s, e: offset + Math.max(e, s), t: String(c.text) });
+  }
+  if (samples && samples.length) {
+    // A word that starts in silence is moved to where the speech actually starts (before the next word).
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i], nextS = i + 1 < words.length ? words[i + 1].s : w.e + 3;
+      const lim = Math.min(nextS, w.s + 3);
+      let peak = 0;
+      for (let t = w.s; t < lim; t += 0.02) peak = Math.max(peak, rms(samples, t * SR, t * SR + SR / 50));
+      const thr = Math.max(0.004, peak * 0.1);
+      const loud = (t) => rms(samples, t * SR, t * SR + SR / 20) >= thr;
+      if (loud(w.s)) continue;
+      let t = w.s;
+      while (t < lim && !loud(t)) t += 0.02;
+      if (t >= lim) continue;
+      const len = Math.max(0.15, w.e - w.s);
+      w.s = Math.max(w.s, t - 0.05);
+      if (w.e < w.s + 0.15) w.e = Math.min(w.s + len, i + 1 < words.length ? Math.max(w.s + 0.15, words[i + 1].s) : w.s + len);
+    }
+  }
+  const out = [];
+  let cur = null;
+  const flush = () => { if (cur) { const text = cleanText(cur.t); if (text) out.push({ start: cur.s, end: cur.e, text, w0e: cur.w0e, wLs: cur.wLs }); } cur = null; };
+  for (const w of words) {
+    if (cur) {
+      const gap = w.s - cur.e;
+      const curText = cleanText(cur.t);
+      const tail = curText.slice(-2);
+      const sentence = /[.!?…。！？]["'”’)\]]?$/.test(tail);
+      const clause = /[,;:，、]$/.test(tail);
+      const nextLen = cleanText(cur.t + w.t).length;
+      if (gap > 0.5 || nextLen > limit || w.e - cur.s > 7 ||
+          (sentence && (curText.length >= 12 || gap > 0.25)) ||
+          (clause && curText.length >= maxChars * 1.3)) flush();
+    }
+    if (!cur) cur = { s: w.s, e: w.e, t: w.t.replace(/^\s+/, ''), w0e: w.e, wLs: w.s };
+    else { cur.t += w.t; cur.e = w.e; cur.wLs = w.s; }
+  }
+  flush();
+  return out;
+}
+
+// Move cue edges onto the real speech: Whisper sometimes starts the first word of a line during the
+// silence before it (or ends the last word late). Uses the loudness of the audio around each edge.
+function snapToSpeech(cues, samples) {
+  if (!samples || !samples.length) return cues;
+  const F = SR / 50; // 20 ms frames
+  const frameRms = (t) => rms(samples, t * SR, t * SR + F);
+  for (const c of cues) {
+    let peak = 0;
+    for (let t = c.start; t < c.end; t += 0.02) peak = Math.max(peak, frameRms(t));
+    const thr = Math.max(0.004, peak * 0.1);
+    const loud = (t) => rms(samples, t * SR, t * SR + SR / 10) >= thr; // 100 ms look-ahead
+    if (!loud(c.start)) {
+      const lim = Math.min((c.w0e != null ? c.w0e : c.end) - 0.05, c.start + 3);
+      let t = c.start;
+      while (t < lim && !loud(t)) t += 0.02;
+      if (t < lim) c.start = Math.max(c.start, t - 0.08);
+    }
+    if (!loud(c.end - 0.1)) {
+      const lim = Math.max((c.wLs != null ? c.wLs : c.start) + 0.15, c.start + 0.3);
+      let t = c.end - 0.1;
+      while (t > lim && !loud(t)) t -= 0.02;
+      if (t > lim) c.end = Math.min(c.end, t + 0.1 + 0.25);
+    }
+    delete c.w0e; delete c.wLs;
+  }
+  return cues;
+}
+
 // Sort, remove empties, make sure every cue has a sensible length and none overlap.
 function tidy(cues) {
   const list = cues
@@ -326,7 +413,7 @@ function filterSegments(segs) {
     if (!t || JUNK.test(t.replace(/[\[\]]/g, (m) => m))) continue;
     const prev = out[out.length - 1];
     if (prev && cleanText(prev.text).toLowerCase() === t.toLowerCase() && s.start - prev.end < 1.5) { prev.end = s.end; continue; }
-    out.push({ start: s.start, end: s.end, text: t });
+    out.push(Object.assign({}, s, { text: t }));
   }
   return out;
 }
@@ -884,7 +971,7 @@ function limitReason(opts, pro) {
 }
 
 if (typeof module !== 'undefined') module.exports = {
-  SR, MODELS, LANGS, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
+  SR, MODELS, LANGS, wordsToCues, snapToSpeech, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
   parseSubs, cueAt, removeFillers, findPauses, keepParts, retimeCues, wordTimes, wordAt, popChunks, CAP_PRESETS, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
   SPK_COLORS, SPK_COLORS_DARK, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, centroid, matchVoices, rememberVoice, crc32, makeZip, minutesDocx, MINUTES_TEXT,
@@ -1237,7 +1324,7 @@ async function generate() {
     const maxSec = unlocked() ? total : Math.min(total, FREE_MINUTES * 60);
     const windows = planWindows(samples, maxSec);
     setProg(4, 'Getting the AI ready…');
-    const ready = await call({ type: 'load', model: MODELS[opts.model].id }, 'load');
+    const ready = await call({ type: 'load', model: MODELS[opts.model].id, big: !!MODELS[opts.model].gpu }, 'load');
     if (cancelled) return;
     let found = [];
     const startList = cues.length ? cues : [];
@@ -1248,10 +1335,16 @@ async function generate() {
       if (!isSilent(samples, w)) {
         const slice = samples.slice(Math.round(w.start * SR), Math.round(w.end * SR));
         const id = ++jobId;
-        const res = await call({ type: 'run', id, audio: slice, language: opts.lang, task: opts.task }, id, [slice.buffer]);
+        const res = await call({ type: 'run', id, audio: slice, language: opts.lang, task: opts.task, words: true }, id, [slice.buffer]);
         if (cancelled) return;
-        const segs = filterSegments(chunksToSegments(res.chunks, w.start, w.end));
-        found = tidy(found.concat(segmentsToCues(segs, style.chars)));
+        let made;
+        if (res.words) {
+          const lines = snapToSpeech(filterSegments(wordsToCues(res.chunks, w.start, w.end, style.chars, samples)), samples);
+          made = lines.map((c) => ({ start: c.start, end: c.end, text: wrapText(c.text, style.chars) }));
+        } else {
+          made = segmentsToCues(filterSegments(chunksToSegments(res.chunks, w.start, w.end)), style.chars);
+        }
+        found = tidy(found.concat(made));
         cues = startList.length ? tidy(startList.filter((c) => c.end <= windows[0].start || c.start >= maxSec).concat(found)) : found;
         renderList(); renderCap(); updateButtons();
       }
@@ -1303,6 +1396,7 @@ function updateGenUI() {
   const d = video.duration;
   let hint = `The AI is downloaded once and then works offline. Your video stays on this computer.`;
   if (file && d && d > FREE_MINUTES * 60 && !pro) hint = `Free version: subtitles for the first ${FREE_MINUTES} minutes of each video (this one is ${fmtClock(d)}). ` + hint;
+  if (opts.lang !== 'en' && (opts.model === 'fast' || opts.model === 'accurate')) hint = `Tip: ${MODELS[opts.model].name} quality is made for English. For ${opts.lang ? (LANGS.find((l) => l[0] === opts.lang) || ['', 'other languages'])[1] : 'other languages'}, choose “${MODELS.turbo.name.split(' (')[0]}” or “${MODELS.best.name}” – far fewer mistakes. ` + hint;
   if (!busy && !$('genHint').querySelector('a')) $('genHint').textContent = hint;
   updateButtons();
 }
@@ -1312,7 +1406,8 @@ $('lang').innerHTML = LANGS.map(([v, n]) => `<option value="${v}">${n}</option>`
   const key = id === 'lang' ? 'lang' : id;
   opts[key] = e.target.value;
   const why = limitReason({ model: opts.model, task: opts.task }, unlocked());
-  if (why) { openPro(why); if (id === 'model') opts.model = 'fast'; if (id === 'task') opts.task = 'transcribe'; updateGenUI(); }
+  if (why) { openPro(why); if (id === 'model') opts.model = 'fast'; if (id === 'task') opts.task = 'transcribe'; }
+  updateGenUI();
   try { localStorage.setItem('cp-opts', JSON.stringify(opts)); } catch (_) {}
 }));
 
