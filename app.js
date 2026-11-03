@@ -9,16 +9,35 @@ let proAvailable = false; // Pro limits apply only when the Store actually sells
 proAvailable = true; // owner's rule: Pro is never free – free limits apply everywhere (website, Store, offline) until Pro is bought
 let proSku = PRO_SKU;
 let isPro = false;
-try { isPro = localStorage.getItem('captionpress-pro') === '1'; } catch (_) {}
+const PRO_KEY = 'captionpress-pro', PRO_OK_KEY = 'captionpress-pro-ok', PRO_TRUST_DAYS = 30;
+// The cached "owned" flag is only a convenience for offline Store users: never trusted on the website (nobody can buy
+// there), and in the Store app only for 30 days after the Store last confirmed the purchase.
+function cachedPro() {
+  if (!('getDigitalGoodsService' in window)) return false;
+  try {
+    if (localStorage.getItem(PRO_KEY) !== '1') return false;
+    const raw = localStorage.getItem(PRO_OK_KEY);
+    if (raw == null) { localStorage.setItem(PRO_OK_KEY, String(Date.now())); return true; } // buyer from an older version: confirmed once
+    const ok = Number(raw), now = Date.now();
+    return /^\d+$/.test(raw) && ok <= now + 60000 && now - ok < PRO_TRUST_DAYS * 864e5;
+  } catch (_) { return false; }
+}
+isPro = cachedPro();
 const unlocked = () => isPro || !proAvailable;
 
 async function billing() {
   if (!('getDigitalGoodsService' in window)) return null;
   try { return await window.getDigitalGoodsService(STORE_BILLING); } catch (_) { return null; }
 }
-function setPro(v) {
+// fromStore: the Store has just answered – remember (owned) or forget (not owned) the purchase.
+function setPro(v, fromStore) {
   isPro = v;
-  try { localStorage.setItem('captionpress-pro', v ? '1' : '0'); } catch (_) {}
+  if (fromStore) {
+    try {
+      if (v) { localStorage.setItem(PRO_KEY, '1'); localStorage.setItem(PRO_OK_KEY, String(Date.now())); }
+      else { localStorage.removeItem(PRO_KEY); localStorage.removeItem(PRO_OK_KEY); }
+    } catch (_) {}
+  }
   const b = $('proBtn');
   b.textContent = v ? '★ Pro' : '★ Get Pro';
   b.classList.toggle('is-pro', v);
@@ -42,7 +61,7 @@ async function checkPro() {
     if (details[0]) { proSku = details[0].itemId; if (!PRO_IDS.includes(proSku)) PRO_IDS.push(proSku); }
     const list = await svc.listPurchases();
     const owned = list.some((p) => PRO_IDS.includes(p.itemId));
-    if (owned || details.length) { setPro(owned); return owned; }
+    if (owned || details.length) { setPro(owned, true); return owned; }
     setPro(isPro); // Store did not answer (offline): keep what we knew
     return isPro;
   } catch (_) { return isPro; }
@@ -56,6 +75,7 @@ async function openPro(reason) {
     $('restoreBtn').hidden = true;
   } else {
     $('restoreBtn').hidden = false;
+    if (!isPro) checkPro().then((ok) => { if (ok) proMessage('Pro is unlocked. ★'); }); // a buyer whose 30 offline days ran out is unlocked again here
     try {
       const [d] = await svc.getDetails([proSku]);
       if (!d) proMessage((reason ? reason + ' ' : '') + 'Pro is being added to the Microsoft Store and will be on sale very soon – please check again in a day or two.');
@@ -353,12 +373,108 @@ function recWords(chunks, offset, windowEnd, samples) {
       if (w.e < w.s + 0.15) w.e = Math.min(w.s + len, i + 1 < words.length ? Math.max(w.s + 0.15, words[i + 1].s) : w.s + len);
     }
   }
+  fixLongWords(words, samples);
+  snapOnsets(words, samples);
   return words;
 }
+// ---- word timing for songs ----
+const isPunctEnd = (t) => /[.!?…,;:。！？，、]["'”’)\]]?$/.test(String(t || '').trim());
+// Whisper often gives the word before or after a pause or an instrumental break the whole break, so a line would
+// stay on screen during the break, or the next line would start (and be highlighted) seconds too early.
+// Where the sound shows where the voice is, the word is cut to it; otherwise the usual Whisper pattern is assumed:
+// the first word after a pause starts too early, the last word before a pause ends too late.
+function fixLongWords(words, samples) {
+  if (!words.length) return words;
+  const durs = words.map((w) => w.e - w.s).filter((d) => d > 0).sort((a, b) => a - b);
+  const med = durs.length ? durs[durs.length >> 1] : 0.4;
+  const maxD = Math.max(0.6, Math.min(0.7, med) * 2); // a normal long word
+  const long = Math.max(1.2, maxD * 1.5);
+  const step = 0.05;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (w.e - w.s <= long) continue;
+    const prev = words[i - 1], next = words[i + 1];
+    let fixed = false;
+    if (samples && samples.length) {
+      const lv = [];
+      for (let t = w.s; t < w.e - 1e-6; t += step) lv.push(rms(samples, t * SR, (t + step) * SR));
+      const sorted = lv.slice().sort((a, b) => a - b);
+      const lo = sorted[Math.floor(sorted.length * 0.1)], hi = sorted[Math.max(0, sorted.length - 3)]; // the voice may be a short part
+      if (hi > 0.004 && hi > lo * 1.6) {
+        const thr = lo + (hi - lo) * 0.5;
+        const loud = lv.map((v) => v >= thr);
+        for (let k = 1; k < loud.length; k++) if (!loud[k]) { let j = k; while (j < loud.length && !loud[j]) j++; if (j < loud.length && j - k <= 3) for (let m = k; m < j; m++) loud[m] = true; k = j; }
+        let ra = -1, rb = -1;
+        for (let k = 0; k < loud.length; k++) if (loud[k]) { let j = k; while (j < loud.length && loud[j]) j++; if (j - k > rb - ra) { ra = k; rb = j; } k = j; }
+        const quiet = (a, b) => { let sum = 0; for (let k = a; k < b; k++) sum += lv[k]; return b > a && sum / (b - a) <= lo + (hi - lo) * 0.25; };
+        if (ra >= 0) {
+          const s0 = w.s;
+          if (ra * step >= 0.3 && quiet(0, ra)) { w.s = round3(s0 + ra * step - 0.03); fixed = true; }
+          if ((lv.length - rb) * step >= 0.8 && quiet(rb, lv.length)) { w.e = round3(Math.min(w.e, s0 + rb * step + 0.15)); fixed = true; }
+        }
+      }
+    }
+    if (fixed) continue;
+    const startSus = !prev || prev.e <= w.s - 0.25 || isPunctEnd(prev.t);
+    const endSus = !next || next.s >= w.e + 0.25 || isPunctEnd(w.t);
+    if (endSus && !startSus) w.e = w.s + Math.min(w.e - w.s, Math.max(maxD, 2.5)); // a held note is fine, a whole break is not
+    else if (startSus || w.e - w.s > 4) w.s = w.e - maxD;
+  }
+  return words;
+}
+// Whisper's word starts tend to come a little before the voice (often still in the end of the word before).
+// When the sound clearly dips and rises again (an onset) within 0.3 s after the start, the word starts there.
+function snapOnsets(words, samples) {
+  if (!samples || !samples.length) return words;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (w.e - w.s < 0.2) continue;
+    let peak = 0;
+    for (let t = w.s; t < w.e; t += 0.02) peak = Math.max(peak, rms(samples, t * SR, (t + 0.04) * SR));
+    if (peak < 0.004) continue;
+    const hi = Math.min(w.s + 0.3, w.e - 0.12);
+    let best = -1, bestR = 2;
+    for (let t = w.s - 0.03; t <= hi; t += 0.01) {
+      const after = rms(samples, t * SR, (t + 0.06) * SR), before = rms(samples, (t - 0.06) * SR, t * SR);
+      const r = after / (before + 0.002);
+      if (after >= peak * 0.4 && r > bestR) { bestR = r; best = t; }
+    }
+    if (best > w.s + 0.015) w.s = round3(best);
+  }
+  return words;
+}
+// recognised words -> one time per matching token (the units scriptTokens makes)
+function tokTimes(words) {
+  const out = [];
+  for (const w of words || []) {
+    const tk = scriptTokens(cleanText(w.t)), n = tk.length;
+    tk.forEach((_, k) => out.push({ s: w.s + (w.e - w.s) * k / n, e: w.s + (w.e - w.s) * (k + 1) / n }));
+  }
+  return out;
+}
+// Store the time of every word of a subtitle line (relative to its start) so animated captions follow the real
+// singing. Returns null when the words and times do not match up.
+function attachWt(cue, toks) {
+  const ws = capWords(cue.text);
+  if (!ws.length || !toks || !toks.length) return null;
+  const dur = Math.max(0.05, cue.end - cue.start);
+  const out = [];
+  let k = 0, last = cue.start;
+  for (const o of ws) {
+    const n = scriptTokens(o.w).length;
+    if (!n) { out.push([last, last]); continue; }
+    if (k + n > toks.length) return null;
+    const s = toks[k].s, e = toks[k + n - 1].e;
+    k += n; out.push([s, e]); last = e;
+  }
+  if (k !== toks.length) return null;
+  return out.map(([s, e]) => { const a = Math.min(dur, Math.max(0, s - cue.start)); return [round3(a), round3(Math.min(dur, Math.max(a, e - cue.start)))]; });
+}
+const validWt = (c) => !!c && Array.isArray(c.wt) && c.wt.length > 0 && c.wt.every((p) => Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]) && p[0] >= 0 && p[1] >= p[0]);
 function groupWords(words, maxChars, limit) {
   const out = [];
   let cur = null;
-  const flush = () => { if (cur) { const text = cleanText(cur.t); if (text) out.push({ start: cur.s, end: cur.e, text, w0e: cur.w0e, wLs: cur.wLs }); } cur = null; };
+  const flush = () => { if (cur) { const text = cleanText(cur.t); if (text) out.push({ start: cur.s, end: cur.e, text, w0e: cur.w0e, wLs: cur.wLs, words: cur.ws }); } cur = null; };
   for (const w of words) {
     if (cur) {
       const gap = w.s - cur.e;
@@ -371,8 +487,8 @@ function groupWords(words, maxChars, limit) {
           (sentence && (curText.length >= 12 || gap > 0.25)) ||
           (clause && curText.length >= maxChars * 1.3)) flush();
     }
-    if (!cur) cur = { s: w.s, e: w.e, t: w.t.replace(/^\s+/, ''), w0e: w.e, wLs: w.s };
-    else { cur.t += w.t; cur.e = w.e; cur.wLs = w.s; }
+    if (!cur) cur = { s: w.s, e: w.e, t: w.t.replace(/^\s+/, ''), w0e: w.e, wLs: w.s, ws: [w] };
+    else { cur.t += w.t; cur.e = w.e; cur.wLs = w.s; cur.ws.push(w); }
   }
   flush();
   return out;
@@ -437,6 +553,8 @@ function alignTokens(a, b) {
   }
   return map;
 }
+const LINE_BREAK = 3; // seconds of quiet inside a line that mean "this word does not belong here"
+const MAX_HOLD = 3; // longest time the last word of a line is held
 // words: recognised [{s, e, t}] in time order. Returns cues, one per line of the text (long lines split).
 function alignScript(text, words, maxChars, maxSec) {
   maxChars = maxChars || 42;
@@ -444,7 +562,10 @@ function alignScript(text, words, maxChars, maxSec) {
   const toks = [], owner = [];
   lines.forEach((l, li) => scriptTokens(l).forEach((t) => { toks.push(t); owner.push(li); }));
   const recT = [], recW = [];
-  for (const w of words || []) for (const t of scriptTokens(cleanText(w.t))) { recT.push(t); recW.push(w); }
+  for (const w of words || []) {
+    const tk = scriptTokens(cleanText(w.t)), n = tk.length;
+    tk.forEach((t, k) => { recT.push(t); recW.push({ s: w.s + (w.e - w.s) * k / n, e: w.s + (w.e - w.s) * (k + 1) / n }); });
+  }
   const map = alignTokens(toks, recT);
   // time for each token: exact/near match -> that word; substitution -> that word (less sure); gaps -> interpolate
   const ts = new Array(toks.length).fill(null);
@@ -456,6 +577,23 @@ function alignScript(text, words, maxChars, maxSec) {
   // drop "unsure" times that go backwards
   let lastS = -Infinity;
   for (let i = 0; i < ts.length; i++) { if (ts[i]) { if (ts[i].s < lastS - 0.05) ts[i] = null; else lastS = ts[i].s; } }
+  const byLine = lines.map(() => []);
+  owner.forEach((o, k) => byLine[o].push(k));
+  // A line is sung in one go: words of a line that are timed far away from the rest of it (a word heard in an
+  // instrumental break matched to the first or last word of the line) are dropped and placed next to their line again.
+  for (const idx of byLine) {
+    const timed = idx.filter((k) => ts[k]);
+    if (timed.length < 2) continue;
+    const groups = [[timed[0]]];
+    for (let j = 1; j < timed.length; j++) {
+      if (ts[timed[j]].s - ts[timed[j - 1]].e > LINE_BREAK + 0.4 * (timed[j] - timed[j - 1] - 1)) groups.push([]);
+      groups[groups.length - 1].push(timed[j]);
+    }
+    if (groups.length < 2) continue;
+    const score = (g) => g.reduce((n, k) => n + (ts[k].sure ? 1 : 0.4), 0);
+    const keep = groups.reduce((x, g) => (score(g) > score(x) ? g : x));
+    for (const g of groups) if (g !== keep) for (const k of g) ts[k] = null;
+  }
   const perWord = 0.35;
   const prevK = new Int32Array(ts.length), nextK = new Int32Array(ts.length);
   for (let i = 0, p = -1; i < ts.length; i++) { prevK[i] = p; if (ts[i]) p = i; }
@@ -465,26 +603,44 @@ function alignScript(text, words, maxChars, maxSec) {
     const prev = prevK[i] >= 0 ? prevK[i] : null, next = nextK[i] >= 0 ? nextK[i] : null;
     if (prev != null && next != null) {
       const span = ts[next].s - ts[prev].e, steps = next - prev;
-      const s = ts[prev].e + span * (i - prev - 0.5) / steps;
-      ts[i] = { s, e: s + Math.min(perWord, span / steps) };
+      if (span > steps * perWord * 2 + 1.5) {
+        // a pause or an instrumental break lies here: the words stay with their own line, never spread over the break
+        const s = owner[i] === owner[prev] ? ts[prev].e + (i - prev - 1) * perWord : Math.max(ts[prev].e, ts[next].s - (next - i) * perWord);
+        ts[i] = { s, e: Math.min(s + perWord, ts[next].s) };
+      } else {
+        const s = ts[prev].e + span * (i - prev - 0.5) / steps;
+        ts[i] = { s, e: s + Math.min(perWord, span / steps) };
+      }
     } else if (prev != null) { const s = ts[prev].e + (i - prev - 1) * perWord; ts[i] = { s, e: s + perWord }; }
     else if (next != null) { const s = Math.max(0, ts[next].s - (next - i) * perWord); ts[i] = { s, e: s + perWord }; }
     else { ts[i] = { s: i * perWord, e: i * perWord + perWord }; }
   }
+  // the line ends shortly after its last word, not at the end of the following instrumental break
+  for (const idx of byLine) { const t = idx.length && ts[idx[idx.length - 1]]; if (t && t.e - t.s > MAX_HOLD) t.e = t.s + MAX_HOLD; }
   const cues = [];
-  const byLine = lines.map(() => []);
-  owner.forEach((o, k) => byLine[o].push(k));
   lines.forEach((line, li) => {
     const idx = byLine[li];
     if (!idx.length) return;
     const start = ts[idx[0]].s, end = Math.max(ts[idx[idx.length - 1]].e, start + 0.4);
     const parts = splitText(line, maxChars * 2);
+    const counts = parts.map((p) => capWords(p).reduce((n, o) => n + scriptTokens(o.w).length, 0));
+    const exact = counts.reduce((x, y) => x + y, 0) === idx.length;
     const total = parts.reduce((x, p) => x + p.length, 0) || 1;
-    let t = start;
-    parts.forEach((p, k) => {
-      const e = k === parts.length - 1 ? end : t + (end - start) * p.length / total;
-      cues.push({ start: round3(t), end: round3(e), text: wrapText(p, maxChars) });
-      t = e;
+    let t = start, k = 0;
+    parts.forEach((p, j) => {
+      let cs = t, ce = j === parts.length - 1 ? end : t + (end - start) * p.length / total;
+      let toks2 = null;
+      if (exact && counts[j]) {
+        toks2 = idx.slice(k, k + counts[j]).map((x) => ts[x]);
+        cs = j ? toks2[0].s : start;
+        ce = j === parts.length - 1 ? end : Math.max(cs + 0.4, toks2[toks2.length - 1].e);
+      }
+      k += counts[j];
+      const c = { start: round3(cs), end: round3(ce), text: wrapText(p, maxChars) };
+      const wt = toks2 && attachWt(c, toks2);
+      if (wt) c.wt = wt;
+      cues.push(c);
+      t = ce;
     });
   });
   return tidy(cues.filter((c) => maxSec == null || c.start < maxSec));
@@ -522,7 +678,7 @@ function snapToSpeech(cues, samples) {
 function tidy(cues) {
   const list = cues
     .filter((c) => c && isFinite(c.start) && isFinite(c.end) && cleanText(c.text))
-    .map((c) => { const o = { start: Math.max(0, c.start), end: Math.max(0, c.end), text: String(c.text).trim() }; if (c.spk != null && c.spk >= 0) o.spk = c.spk; if (c.star) o.star = true; return o; })
+    .map((c) => { const o = { start: Math.max(0, c.start), end: Math.max(0, c.end), text: String(c.text).trim() }; if (c.spk != null && c.spk >= 0) o.spk = c.spk; if (c.star) o.star = true; if (validWt(c)) o.wt = c.wt.map((p) => [round3(p[0]), round3(p[1])]); return o; })
     .sort((a, b) => a.start - b.start);
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
@@ -632,9 +788,10 @@ function parseSubs(text) {
 // Whisper gives a time for each line. Inside a line every word gets a share of the time by its length,
 // with a little extra after a comma or full stop. Edited text keeps working because nothing is stored.
 const CJK = /[぀-ヿ㐀-鿿豈-﫿]/;
-function wordTimes(cue) {
+// the words of a caption as they are drawn (CJK: one character each)
+function capWords(text) {
   const out = [];
-  String((cue && cue.text) || '').split('\n').forEach((ln, li) => {
+  String(text || '').split('\n').forEach((ln, li) => {
     const toks = ln.match(/[぀-ヿ㐀-鿿豈-﫿][、。，！？]?|[^\s぀-ヿ㐀-鿿豈-﫿]+/g) || [];
     let prevCjk = false;
     toks.forEach((w, k) => {
@@ -643,7 +800,18 @@ function wordTimes(cue) {
       prevCjk = cjk;
     });
   });
+  return out;
+}
+// Lines made from the sound keep the real time of every word (cue.wt, relative to the line start).
+// Otherwise every word gets a share of the line's time by its length.
+function wordTimes(cue) {
+  const out = capWords(cue && cue.text);
   if (!out.length) return out;
+  if (validWt(cue) && cue.wt.length === out.length) {
+    const end = Math.max(cue.start + 0.05, cue.end);
+    out.forEach((o, i) => { o.s = Math.min(end, cue.start + cue.wt[i][0]); o.e = Math.min(end, Math.max(o.s, cue.start + cue.wt[i][1])); });
+    return out;
+  }
   const weight = (w) => {
     const letters = (w.match(/[\p{L}\p{N}]/gu) || []).length;
     return Math.max(1, letters) + 1.5 + (/[.,!?;:…、。，！？]$/.test(w) ? 2.5 : 0);
@@ -654,6 +822,10 @@ function wordTimes(cue) {
   let acc = 0;
   out.forEach((o, i) => { o.s = cue.start + span * acc / tot; acc += ws[i]; o.e = cue.start + span * acc / tot; });
   return out;
+}
+// how much of each word is sung at time t (0…1) – the karaoke colour moves smoothly across the word
+function wordFill(words, t) {
+  return words.map((o) => (t >= o.e ? (t >= o.s ? 1 : 0) : t <= o.s ? 0 : (t - o.s) / Math.max(0.01, o.e - o.s)));
 }
 // the word being spoken at time t (-1 before the first word)
 function wordAt(words, t) {
@@ -674,12 +846,88 @@ function popChunks(words, max) {
   return out;
 }
 const CAP_PRESETS = {
-  classic: { name: 'Classic', size: 5, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 42, anim: 'none', hl: '#ffd400', font: 'normal', upper: false },
-  tiktok: { name: 'TikTok bold', size: 7, pos: 'middle', color: '#ffffff', bg: 'shadow', chars: 32, anim: 'highlight', hl: '#ffd400', font: 'heavy', upper: true },
-  pop: { name: 'Pop-up words', size: 10, pos: 'middle', color: '#ffffff', bg: 'shadow', chars: 32, anim: 'pop', hl: '#3ee07a', font: 'heavy', upper: true },
-  karaoke: { name: 'Karaoke', size: 6, pos: 'bottom', color: '#ffffff', bg: 'shadow', chars: 42, anim: 'fill', hl: '#33c3ff', font: 'heavy', upper: false },
-  boxed: { name: 'Box highlight', size: 6, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 32, anim: 'highlight', hl: '#ff5ca8', font: 'heavy', upper: false },
+  classic: { name: 'Classic', size: 5, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 42, anim: 'none', hl: '#ffd400', font: 'normal', upper: false, ol: '#000000' },
+  tiktok: { name: 'TikTok bold', size: 7, pos: 'middle', color: '#ffffff', bg: 'shadow', chars: 32, anim: 'highlight', hl: '#ffd400', font: 'heavy', upper: true, ol: '#000000' },
+  pop: { name: 'Pop-up words', size: 10, pos: 'middle', color: '#ffffff', bg: 'shadow', chars: 32, anim: 'pop', hl: '#3ee07a', font: 'heavy', upper: true, ol: '#000000' },
+  karaoke: { name: 'Karaoke', size: 6, pos: 'bottom', color: '#ffffff', bg: 'shadow', chars: 42, anim: 'fill', hl: '#33c3ff', font: 'heavy', upper: false, ol: '#000000' },
+  karaoke2: { name: 'Karaoke – 2 lines', size: 6.5, pos: 'bottom', color: '#ffffff', bg: 'shadow', chars: 42, anim: 'karaoke2', hl: '#1e6bff', font: 'heavy', upper: false, ol: '#0a1a4a', olHl: '#ffffff', leadIn: true },
+  boxed: { name: 'Box highlight', size: 6, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 32, anim: 'highlight', hl: '#ff5ca8', font: 'heavy', upper: false, ol: '#000000' },
 };
+const STYLE_DEFAULT = { size: 5, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 42, anim: 'none', hl: '#ffd400', font: 'normal', upper: false,
+  family: '', dx: 0, dy: 0, ol: '#000000', olHl: '#ffffff', leadIn: true, kOff: 0.1 };
+
+// ---------- two-line karaoke (lyrics videos) ----------
+// Lines take turns in an upper row (left) and a lower row (right). The next line is already shown in the free row
+// so the singer can read ahead; a line goes away shortly after it is sung. After a break of `gap` seconds a new
+// block starts in the upper row, with a lead-in countdown (4 dots) before its first word.
+const KARAOKE = { gap: 3, lead: 3, ahead: 6, hold: 0.5, minLead: 0.8 };
+function karaokePlan(list, o) {
+  o = Object.assign({}, KARAOKE, o);
+  const plan = list.map((c, i) => ({ row: 0, block: !i || c.start - list[i - 1].end >= o.gap, appear: c.start, remove: c.end, lead: null }));
+  plan.forEach((p, i) => { if (!p.block) p.row = 1 - plan[i - 1].row; });
+  plan.forEach((p, i) => {
+    const c = list[i];
+    let rm = c.end + o.hold;
+    // the row is needed by the line after next
+    if (list[i + 2] && !plan[i + 1].block && !plan[i + 2].block) rm = Math.min(rm, Math.max(c.end, list[i + 2].start - 0.25));
+    if (list[i + 1] && plan[i + 1].block) rm = Math.min(rm, Math.max(c.end, list[i + 1].start - Math.min(o.lead, o.gap - o.hold)));
+    p.remove = rm;
+  });
+  plan.forEach((p, i) => {
+    const c = list[i];
+    if (p.block) {
+      const room = i ? c.start - plan[i - 1].remove : c.start;
+      const lead = Math.max(0, Math.min(o.lead, room));
+      p.appear = c.start - lead;
+      if (o.leadIn && lead >= o.minLead) p.lead = { from: c.start - lead, to: c.start };
+    } else {
+      const free = plan[i - 1].block ? plan[i - 1].appear : plan[i - 2].remove;
+      p.appear = Math.min(c.start, Math.max(free, c.start - o.ahead));
+    }
+  });
+  return plan;
+}
+// lines on screen at time t: [{ i, row }]
+function karaokeVisible(plan, t) {
+  const out = [];
+  plan.forEach((p, i) => { if (t >= p.appear && t < p.remove) out.push({ i, row: p.row }); });
+  return out;
+}
+// lead-in countdown: how many of the 4 dots are still shown at time t
+function leadDots(lead, t) {
+  if (!lead || t < lead.from || t >= lead.to) return 0;
+  return Math.max(1, Math.min(4, Math.ceil(4 * (lead.to - t) / (lead.to - lead.from))));
+}
+
+// ---------- project files (.cpproj) ----------
+const PROJECT_VER = 1;
+function makeProject(d) {
+  return JSON.stringify({
+    app: 'CaptionPress', kind: 'project', version: PROJECT_VER, saved: new Date().toISOString(),
+    video: d.video || null,
+    subtitles: (d.cues || []).map((c) => { const o = { start: c.start, end: c.end, text: c.text }; if (validWt(c)) o.wt = c.wt; if (c.spk != null && c.spk >= 0) o.spk = c.spk; if (c.star) o.star = true; return o; }),
+    speakers: d.names || [], style: d.style || {}, lyrics: d.lyrics || '',
+  }, null, 1);
+}
+// Returns { cues, names, style, lyrics, video } or throws a friendly error.
+function readProject(text) {
+  let p;
+  try { p = JSON.parse(String(text).replace(/^\uFEFF/, '')); } catch (_) { throw new Error('This file is not a CaptionPress project.'); }
+  if (!p || typeof p !== 'object' || p.app !== 'CaptionPress' || !Array.isArray(p.subtitles)) throw new Error('This file is not a CaptionPress project.');
+  if (Number(p.version) > PROJECT_VER) throw new Error('This project was saved by a newer CaptionPress. Please update the app.');
+  const cues = tidy(p.subtitles.filter((c) => c && typeof c === 'object').map((c) => {
+    const o = { start: Number(c.start), end: Number(c.end), text: String(c.text == null ? '' : c.text).slice(0, 2000) };
+    if (Number.isInteger(c.spk) && c.spk >= 0 && c.spk < 50) o.spk = c.spk;
+    if (c.star === true) o.star = true;
+    if (validWt(c)) o.wt = c.wt;
+    return o;
+  }));
+  const st = {};
+  const src = p.style && typeof p.style === 'object' ? p.style : {};
+  for (const [k, v] of Object.entries(STYLE_DEFAULT)) if (k in src && typeof src[k] === typeof v) st[k] = src[k];
+  const v = p.video && typeof p.video === 'object' ? { name: String(p.video.name || '').slice(0, 300), duration: Number(p.video.duration) || 0, size: Number(p.video.size) || 0 } : null;
+  return { cues, names: Array.isArray(p.speakers) ? p.speakers.slice(0, 50).map((x) => String(x).slice(0, 80)) : [], style: st, lyrics: typeof p.lyrics === 'string' ? p.lyrics.slice(0, 200000) : '', video: v };
+}
 
 // ---------- filler words and pauses ----------
 // "um", "uh" and friends in the main languages; a word is removed only when it stands alone
@@ -739,7 +987,11 @@ function keepParts(duration, cuts) {
 // subtitle times after the pauses are cut out
 function retimeCues(cues, cuts) {
   const map = (t) => { let d = 0; for (const c of cuts) { if (t >= c.end) d += c.end - c.start; else if (t > c.start) { d += t - c.start; break; } else break; } return Math.round((t - d) * 1000) / 1000; };
-  return cues.map((c) => Object.assign({}, c, { start: map(c.start), end: map(c.end) })).filter((c) => c.end - c.start >= 0.2);
+  return cues.map((c) => {
+    const o = Object.assign({}, c, { start: map(c.start), end: map(c.end) });
+    if (cuts.some((x) => x.start < c.end && x.end > c.start)) delete o.wt; // a pause inside the line was cut: word times no longer fit
+    return o;
+  }).filter((c) => c.end - c.start >= 0.2);
 }
 function cueAt(cues, t) {
   let lo = 0, hi = cues.length - 1;
@@ -762,9 +1014,12 @@ function splitCue(cues, i, pos) {
   }
   const a = flat.slice(0, pos).trim(), b = flat.slice(pos).trim();
   if (!a || !b) return cues;
-  const t = c.start + (c.end - c.start) * (a.length / (a.length + b.length));
+  let t = c.start + (c.end - c.start) * (a.length / (a.length + b.length));
+  const na = capWords(a).length, keepWt = validWt(c) && na + capWords(b).length === c.wt.length && capWords(c.text).length === c.wt.length;
+  if (keepWt && c.wt[na][0] > 0.05 && c.start + c.wt[na][0] < c.end - 0.05) t = c.start + c.wt[na][0];
   const out = cues.slice();
   const x = { start: c.start, end: round3(t), text: wrapText(a) }, y = { start: round3(t), end: c.end, text: wrapText(b) };
+  if (keepWt) { const d = y.start - c.start; x.wt = c.wt.slice(0, na); y.wt = c.wt.slice(na).map(([p, q]) => [round3(Math.max(0, p - d)), round3(Math.max(0, q - d))]); }
   if (c.spk != null) { x.spk = c.spk; y.spk = c.spk; }
   if (c.star) x.star = true;
   out.splice(i, 1, x, y);
@@ -777,6 +1032,7 @@ function mergeCue(cues, i) {
   const m = { start: a.start, end: b.end, text: wrapText(a.text.replace(/\n/g, ' ') + ' ' + b.text.replace(/\n/g, ' ')) };
   if (a.spk != null) m.spk = a.spk; else if (b.spk != null) m.spk = b.spk;
   if (a.star || b.star) m.star = true;
+  if (validWt(a) && validWt(b)) { const d = b.start - a.start; m.wt = a.wt.concat(b.wt.map(([p, q]) => [round3(p + d), round3(q + d)])); }
   out.splice(i, 2, m);
   return out;
 }
@@ -1105,14 +1361,25 @@ function limitReason(opts, pro) {
 if (typeof module !== 'undefined') module.exports = {
   SR, MODELS, LANGS, wordsToCues, snapToSpeech, recWords, groupWords, alignScript, alignTokens, scriptLines, scriptTokens, normWord, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
-  parseSubs, cueAt, removeFillers, findPauses, keepParts, retimeCues, wordTimes, wordAt, popChunks, CAP_PRESETS, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
+  parseSubs, cueAt, removeFillers, findPauses, keepParts, retimeCues, wordTimes, wordAt, popChunks, CAP_PRESETS, STYLE_DEFAULT, capWords, wordFill,
+  fixLongWords, snapOnsets, tokTimes, attachWt, validWt, karaokePlan, karaokeVisible, leadDots, KARAOKE, makeProject, readProject, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
   SPK_COLORS, SPK_COLORS_DARK, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, centroid, matchVoices, rememberVoice, crc32, makeZip, minutesDocx, MINUTES_TEXT,
 };
 // ---------- CaptionPress UI ----------
 let file = null, fileUrl = '', cues = [], hist = [], fut = [], active = -1, busy = false;
-let style = { size: 5, pos: 'bottom', color: '#ffffff', bg: 'box', chars: 42, anim: 'none', hl: '#ffd400', font: 'normal', upper: false };
+let style = Object.assign({}, STYLE_DEFAULT);
 let opts = { lang: '', model: 'fast', task: 'transcribe' };
 try { Object.assign(style, JSON.parse(localStorage.getItem('cp-style') || '{}')); } catch (_) {}
+// keep saved / opened settings inside what the controls allow
+function cleanStyle(st) {
+  for (const [k, v] of Object.entries(STYLE_DEFAULT)) if (typeof st[k] !== typeof v || (typeof v === 'number' && !isFinite(st[k]))) st[k] = v;
+  const lim = { size: [3, 12], dx: [-45, 45], dy: [-90, 90], kOff: [-0.5, 0.5] };
+  for (const [k, [a, b]] of Object.entries(lim)) st[k] = Math.max(a, Math.min(b, st[k]));
+  if (![32, 42, 56].includes(st.chars)) st.chars = 42;
+  if (!['none', 'highlight', 'fill', 'karaoke2', 'pop'].includes(st.anim)) st.anim = 'none';
+  return st;
+}
+cleanStyle(style);
 try { Object.assign(opts, JSON.parse(localStorage.getItem('cp-opts') || '{}')); } catch (_) {}
 const video = $('video');
 
@@ -1288,11 +1555,12 @@ function capCss() {
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   drawCapNow();
 }
+let capBox = null;
 function drawCapNow() {
   const cv = $('capCv'), ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, cv.width, cv.height);
-  const t = video.currentTime || 0, i = cueAt(cues, t);
-  if (i >= 0) drawCaption(ctx, cues[i], t, cv.width, cv.height);
+  capBox = drawCaptions(ctx, video.currentTime || 0, cv.width, cv.height);
+  if (previewMark()) drawWatermark(ctx, cv.width, cv.height, capBox);
 }
 function renderCap() {
   capCss();
@@ -1325,7 +1593,7 @@ video.addEventListener('play', tick);
 video.addEventListener('pause', tick);
 video.addEventListener('seeked', tick);
 video.addEventListener('timeupdate', () => { if (video.paused) tick(); });
-video.addEventListener('click', () => (video.paused ? video.play() : video.pause()));
+video.addEventListener('click', () => { if (Date.now() - capDragEnd < 400) return; video.paused ? video.play() : video.pause(); });
 video.addEventListener('loadedmetadata', () => {
   const ar = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9;
   $('frame').style.aspectRatio = String(ar);
@@ -1337,6 +1605,7 @@ video.addEventListener('loadedmetadata', () => {
     video.currentTime = 1e7;
   }
   updateGenUI(); tick();
+  checkProjectVideo();
 });
 $('seek').addEventListener('input', () => { seeking = true; if (video.duration) video.currentTime = $('seek').value / 1000 * video.duration; });
 $('seek').addEventListener('change', () => { seeking = false; });
@@ -1360,9 +1629,11 @@ function isMedia(f) { return /^(video|audio)\//.test(f.type) || /\.(mp4|m4v|mov|
 function openFile(f) {
   if (!f) return;
   if (/\.(srt|vtt)$/i.test(f.name)) { importSubs(f); return; }
+  if (/\.cpproj$/i.test(f.name)) { openProject(f); return; }
   if (!isMedia(f)) { toast('Please choose a video or audio file.'); return; }
   if (busy) cancelGen();
   const carry = !file && cues.length ? cues : null; // lines opened from a subtitle file before any video
+  const fromProject = !!(carry && projWant), carryNames = spkNames;
   file = f;
   if (fileUrl) URL.revokeObjectURL(fileUrl);
   fileUrl = URL.createObjectURL(f);
@@ -1373,10 +1644,12 @@ function openFile(f) {
   cues = []; spkNames = []; lastAudio = null;
   try {
     const saved = JSON.parse(localStorage.getItem(storeKey()) || 'null');
-    if (saved && Array.isArray(saved.names)) spkNames = saved.names.map(String);
-    if (saved && Array.isArray(saved.cues) && saved.cues.length) { cues = tidy(saved.cues); toast('Your subtitle lines for this file were restored from last time.'); }
+    if (fromProject) spkNames = carryNames;
+    else if (saved && Array.isArray(saved.names)) spkNames = saved.names.map(String);
+    if (!fromProject && saved && Array.isArray(saved.cues) && saved.cues.length) { cues = tidy(saved.cues); toast('Your subtitle lines for this file were restored from last time.'); }
   } catch (_) {}
   if (!cues.length && carry) { cues = carry; autosave(); }
+  if (!fromProject) projWant = null;
   $('genHint').textContent = '';
   renderList(); renderCap(); updateButtons(); updateGenUI();
 }
@@ -1390,6 +1663,57 @@ async function importSubs(f) {
 $('openBtn').onclick = $('dropOpen').onclick = () => $('fileIn').click();
 $('fileIn').onchange = (e) => { openFile(e.target.files[0]); e.target.value = ''; };
 $('subIn').onchange = (e) => { if (e.target.files[0]) importSubs(e.target.files[0]); e.target.value = ''; };
+$('projIn').onchange = (e) => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value = ''; };
+
+// ---------- project files: lines with word times, caption look, lyrics, which video ----------
+let projWant = null; // the video an opened project belongs to (checked when it is opened)
+function saveProject() {
+  closeMenus();
+  const lyrics = $('lyricsIn').value;
+  if (!cues.length && !lyrics.trim()) { toast('There is nothing to save yet – make or open subtitle lines first.'); return; }
+  const d = video.duration;
+  const vid = file ? { name: file.name, size: file.size, duration: isFinite(d) ? round3(d) : 0 } : projWant;
+  download(baseName() + '.cpproj', makeProject({ cues, names: spkNames, style, lyrics, video: vid }), 'application/json;charset=utf-8');
+  toast('Project saved to your Downloads folder. Open it again with ☰ More → Open project…', 5000);
+}
+async function openProject(f) {
+  closeMenus();
+  let p;
+  try { p = readProject(await f.text()); } catch (e) { toast(e.message || 'This file is not a CaptionPress project.', 6000); return; }
+  if (!p.cues.length && !p.lyrics.trim()) { toast('This project has no subtitle lines.'); return; }
+  if (busy) cancelGen();
+  // the same rules as opening an .srt file: these are the user's own lines; Pro features stay Pro
+  const before = snapshot();
+  // who-said-what (Meeting notes) is Pro: a free user gets the lines without the speaker names; the file is unchanged
+  const hadSpk = p.cues.some((c) => c.spk != null);
+  if (!unlocked() && hadSpk) { p.cues.forEach((c) => delete c.spk); p.names = []; }
+  spkNames = p.names;
+  style = cleanStyle(Object.assign({}, style, p.style));
+  try { localStorage.setItem('cp-style', JSON.stringify(style)); } catch (_) {}
+  initStyle();
+  $('lyricsIn').value = p.lyrics; lyricsInfo();
+  if (p.lyrics.trim()) $('lyricsBox').open = true;
+  commit(p.cues, before);
+  projWant = p.video && p.video.name ? p.video : null;
+  const spkNote = !unlocked() && hadSpk ? ' Who said each line (Meeting notes) is part of Pro and was left out – the file itself is unchanged.' : '';
+  if (file) { toast(`Project opened – ${p.cues.length} lines.${spkNote}`, spkNote ? 8000 : 3200); checkProjectVideo(); return; }
+  if (projWant) {
+    toast(`Project opened – ${p.cues.length} lines. Now open its video “${projWant.name}” with 📂 Open video.${spkNote}`, 9000);
+    $('genHint').textContent = `Project opened. Open the video “${projWant.name}” to see the lines on it.`;
+  } else toast(`Project opened – ${p.cues.length} lines. Open the video to see them on it.${spkNote}`, 6000);
+}
+// warn when the opened video is not the one the project was made for
+function checkProjectVideo() {
+  const want = projWant;
+  if (!want || !file || !want.name) return;
+  const d = video.duration;
+  if (!isFinite(d) && file.name === want.name) return; // wait for the length
+  projWant = null;
+  const badName = want.name !== file.name, badLen = want.duration > 0 && isFinite(d) && Math.abs(d - want.duration) > 1;
+  if (badName || badLen) toast(`⚠ This project was made for “${want.name}”${want.duration ? ` (${fmtClock(want.duration)})` : ''}, but the open video is “${file.name}”${isFinite(d) ? ` (${fmtClock(d)})` : ''}. The timing may not fit – open the right video, or check the lines.`, 10000);
+}
+$('projSaveBtn').onclick = saveProject;
+$('projOpenBtn').onclick = () => { closeMenus(); $('projIn').click(); };
 ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); $('drop').classList.add('over'); }));
 ['dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop' || !e.relatedTarget) $('drop').classList.remove('over'); }));
 document.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) openFile(f); });
@@ -1484,7 +1808,12 @@ async function generate() {
         }
         if (res.words) {
           const lines = snapToSpeech(filterSegments(wordsToCues(res.chunks, w.start, w.end, style.chars, samples)), samples);
-          made = lines.map((c) => ({ start: c.start, end: c.end, text: wrapText(c.text, style.chars) }));
+          made = lines.map((c) => {
+            const o = { start: c.start, end: c.end, text: wrapText(c.text, style.chars) };
+            const wt = attachWt(o, tokTimes(c.words));
+            if (wt) o.wt = wt;
+            return o;
+          });
         } else {
           made = segmentsToCues(filterSegments(chunksToSegments(res.chunks, w.start, w.end)), style.chars);
         }
@@ -1567,7 +1896,7 @@ function updateGenUI() {
   if (!busy && (pro || !$('genHint').querySelector('a'))) $('genHint').textContent = hint;
   updateButtons();
 }
-function renderAll() { updateGenUI(); }
+function renderAll() { updateGenUI(); if (typeof initStyle === 'function' && $('stProNote')) { initStyle(); renderCap(); } }
 $('lang').innerHTML = LANGS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
 ['lang', 'model', 'task'].forEach((id) => $(id).addEventListener('change', (e) => {
   const key = id === 'lang' ? 'lang' : id;
@@ -1579,11 +1908,25 @@ $('lang').innerHTML = LANGS.map(([v, n]) => `<option value="${v}">${n}</option>`
 }));
 
 // ---------- style ----------
-const ST_IDS = { stSize: 'size', stPos: 'pos', stColor: 'color', stBg: 'bg', stChars: 'chars', stAnim: 'anim', stHl: 'hl', stFont: 'font' };
+const ST_IDS = { stSize: 'size', stPos: 'pos', stColor: 'color', stBg: 'bg', stChars: 'chars', stAnim: 'anim', stHl: 'hl', stFont: 'font', stOl: 'ol', stOlHl: 'olHl', stDx: 'dx', stDy: 'dy', stKOff: 'kOff' };
+const ST_NUM = ['size', 'chars', 'dx', 'dy', 'kOff'];
 function initStyle() {
   for (const [id, k] of Object.entries(ST_IDS)) $(id).value = String(style[k]);
   $('stUpper').checked = !!style.upper;
+  $('stLead').checked = style.leadIn !== false;
+  const k2 = style.anim === 'karaoke2';
   $('stHlRow').hidden = style.anim === 'none';
+  $('stHlLbl').textContent = k2 ? 'Sung colour' : 'Highlight colour';
+  $('stColorLbl').textContent = k2 ? 'Unsung colour' : 'Text colour';
+  $('stOlRow').hidden = style.bg !== 'shadow';
+  $('stOlHlRow').hidden = !k2 || style.bg !== 'shadow';
+  $('stLeadRow').hidden = !k2;
+  $('stKOffRow').hidden = style.anim === 'none';
+  const ko = kOffset();
+  $('stKOffVal').textContent = (ko > 0 ? '+' : '') + ko.toFixed(2) + ' s' + (Math.abs(ko - STYLE_DEFAULT.kOff) < 0.001 ? ' (default)' : ko > 0 ? ' later' : ko < 0 ? ' earlier' : '');
+  $('stFamily').textContent = safeFamily(style.family) || 'Segoe UI (default)';
+  $('stFamily').style.fontFamily = safeFamily(style.family) ? `"${safeFamily(style.family)}", "Segoe UI", sans-serif` : '';
+  $('stProNote').hidden = !previewMark();
   document.querySelectorAll('#presets button').forEach((b) => {
     const p = CAP_PRESETS[b.dataset.p];
     b.classList.toggle('on', Object.keys(p).every((k) => k === 'name' || k === 'size' || k === 'chars' || style[k] === p[k]));
@@ -1597,11 +1940,33 @@ function setStyle(next) {
   initStyle();
   renderCap();
 }
-[...Object.keys(ST_IDS), 'stUpper'].forEach((id) => $(id).addEventListener('input', () => {
-  const next = { upper: $('stUpper').checked };
-  for (const [i, k] of Object.entries(ST_IDS)) next[k] = (k === 'size' || k === 'chars') ? Number($(i).value) : $(i).value;
+[...Object.keys(ST_IDS), 'stUpper', 'stLead'].forEach((id) => $(id).addEventListener('input', () => {
+  const next = { upper: $('stUpper').checked, leadIn: $('stLead').checked };
+  for (const [i, k] of Object.entries(ST_IDS)) next[k] = ST_NUM.includes(k) ? Number($(i).value) : $(i).value;
   setStyle(next);
 }));
+$('stCentre').onclick = () => setStyle({ dx: 0, dy: 0 });
+// drag the caption on the preview to move it
+let capDrag = null, capDragEnd = 0;
+function capPoint(e) { const cv = $('capCv'), r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / (r.width || 1), y: (e.clientY - r.top) * cv.height / (r.height || 1) }; }
+const onCap = (p) => !!capBox && p.x >= capBox.x - 12 && p.x <= capBox.x + capBox.w + 12 && p.y >= capBox.y - 12 && p.y <= capBox.y + capBox.h + 12;
+$('frame').addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !onCap(capPoint(e))) return;
+  capDrag = { x: e.clientX, y: e.clientY, dx: Number(style.dx) || 0, dy: Number(style.dy) || 0, moved: false, id: e.pointerId };
+});
+$('frame').addEventListener('pointermove', (e) => {
+  if (!capDrag) { $('frame').classList.toggle('cap-hover', onCap(capPoint(e))); return; }
+  const r = $('frame').getBoundingClientRect(), mx = e.clientX - capDrag.x, my = e.clientY - capDrag.y;
+  if (!capDrag.moved && Math.abs(mx) + Math.abs(my) < 4) return;
+  if (!capDrag.moved) { capDrag.moved = true; try { $('frame').setPointerCapture(capDrag.id); } catch (_) {} }
+  style.dx = Math.max(-45, Math.min(45, Math.round(capDrag.dx + mx / r.width * 100)));
+  style.dy = Math.max(-90, Math.min(90, Math.round(capDrag.dy - my / r.height * 100)));
+  $('stDx').value = style.dx; $('stDy').value = style.dy;
+  drawCapNow();
+});
+const endCapDrag = () => { if (!capDrag) return; if (capDrag.moved) { capDragEnd = Date.now(); setStyle({ dx: style.dx, dy: style.dy }); } capDrag = null; };
+$('frame').addEventListener('pointerup', endCapDrag);
+$('frame').addEventListener('pointercancel', endCapDrag);
 $('presets').innerHTML = Object.entries(CAP_PRESETS).map(([k, p]) => `<button type="button" class="preset" data-p="${k}">${esc(p.name)}</button>`).join('');
 $('presets').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-p]'); if (!b) return;
@@ -1609,6 +1974,86 @@ $('presets').addEventListener('click', (e) => {
   setStyle(p);
   if (video.paused && cues.length && cueAt(cues, video.currentTime || 0) < 0) video.currentTime = cues[0].start + 0.01;
 });
+
+// ---------- fonts on this PC ----------
+const COMMON_FONTS = ['Segoe UI', 'Segoe UI Black', 'Segoe UI Semibold', 'Segoe UI Light', 'Segoe Print', 'Segoe Script', 'Arial', 'Arial Black', 'Arial Narrow', 'Bahnschrift',
+  'Calibri', 'Cambria', 'Candara', 'Comic Sans MS', 'Consolas', 'Constantia', 'Corbel', 'Courier New', 'Franklin Gothic Medium', 'Gabriola', 'Georgia', 'Impact', 'Ink Free',
+  'Lucida Sans Unicode', 'Microsoft Sans Serif', 'Palatino Linotype', 'Sitka Text', 'Sylfaen', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana',
+  'Roboto', 'Open Sans', 'Montserrat', 'Noto Sans', 'Be Vietnam Pro', 'DejaVu Sans', 'Liberation Sans'];
+let pcFonts = null, commonFound = null;
+const fontCtx = document.createElement('canvas').getContext('2d');
+const fontW = (font, text) => { fontCtx.font = font; return fontCtx.measureText(text).width; };
+// a font is installed when text drawn with it is not the same width as with the fallback fonts
+function fontInstalled(name) {
+  const f = safeFamily(name), test = 'mmmmmmmmmmlliWW@#&0123 Ẫệỹ';
+  return !!f && ['monospace', 'serif', 'sans-serif'].some((b) => fontW(`40px "${f}", ${b}`, test) !== fontW(`40px ${b}`, test));
+}
+function fontHasVietnamese(name) {
+  const f = safeFamily(name), test = 'ẫệỹờựđ';
+  return ['monospace', 'serif'].some((b) => fontW(`40px "${f}", ${b}`, test) !== fontW(`40px ${b}`, test));
+}
+const fontMsg = (t) => { $('fontMsg').textContent = t || ''; };
+function renderFonts() {
+  const q = $('fontSearch').value.trim().toLowerCase();
+  if (!pcFonts && !commonFound) commonFound = COMMON_FONTS.filter(fontInstalled);
+  const all = pcFonts || commonFound;
+  const list = all.filter((f) => f.toLowerCase().includes(q));
+  const box = $('fontList');
+  box.textContent = '';
+  const add = (fam, label) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'font-item' + (fam === safeFamily(style.family) ? ' on' : ''); b.dataset.f = fam;
+    const n = document.createElement('span'); n.className = 'fn'; n.textContent = label || fam;
+    const smp = document.createElement('span'); smp.className = 'fs'; smp.textContent = 'Xin chào – Tiếng Việt';
+    if (fam) smp.style.fontFamily = `"${fam}", "Segoe UI", sans-serif`;
+    b.append(n, smp);
+    if (fam && !fontHasVietnamese(fam)) { const w = document.createElement('span'); w.className = 'fw'; w.textContent = '⚠'; w.title = 'This font may not have all Vietnamese letters'; n.append(' ', w); }
+    box.append(b);
+  };
+  if (!q) add('', 'Default (Segoe UI)');
+  list.slice(0, 300).forEach((f) => add(safeFamily(f)));
+  if (!list.length && q) { const p = document.createElement('p'); p.className = 'hint'; p.textContent = 'No font with that name in the list – type the full name below and click “Use this font”.'; box.append(p); }
+  if (list.length > 300) { const p = document.createElement('p'); p.className = 'hint'; p.textContent = `${list.length} fonts – type a few letters to find yours.`; box.append(p); }
+}
+async function loadPcFonts() {
+  if (!('queryLocalFonts' in window)) { fontMsg('This PC cannot list its fonts here – pick one below or type its name.'); return; }
+  try {
+    const data = await window.queryLocalFonts();
+    const fams = [...new Set(data.map((d) => safeFamily(d.family)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    if (!fams.length) { fontMsg('No fonts were shared. You can still type a font name below.'); return; }
+    pcFonts = fams;
+    fontMsg(`${fams.length} fonts found on this PC.`);
+    renderFonts();
+  } catch (e) {
+    fontMsg(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
+      ? 'CaptionPress was not allowed to see the fonts. To allow it, click “Use fonts on this PC…” again and choose Allow (or allow “Fonts” in the site/app permissions). You can also type a font name below.'
+      : 'The fonts could not be listed. Type a font name below instead.');
+  }
+}
+function chooseFont(fam, checked) {
+  fam = safeFamily(fam);
+  if (fam && !checked && !fontInstalled(fam)) { fontMsg(`“${fam}” was not found on this PC. Type the name exactly as in Windows Settings → Fonts.`); return; }
+  setStyle({ family: fam });
+  renderFonts();
+  fontMsg(fam ? (fontHasVietnamese(fam) ? `Using “${fam}”.` : `Using “${fam}”. ⚠ It may not have all Vietnamese letters – missing ones are drawn in Segoe UI.`) : 'Using the default font.');
+}
+$('stFamily').onclick = () => {
+  fontMsg('');
+  $('fontLocal').hidden = !('queryLocalFonts' in window);
+  $('fontSearch').value = ''; $('fontName').value = '';
+  renderFonts();
+  $('fontDialog').showModal();
+  // allowed before: list the PC's fonts right away (this click still counts as the user's action)
+  if ('queryLocalFonts' in window && !pcFonts && navigator.permissions) {
+    navigator.permissions.query({ name: 'local-fonts' }).then((st) => { if (st.state === 'granted') loadPcFonts(); }).catch(() => {});
+  }
+};
+$('fontLocal').onclick = loadPcFonts;
+$('fontSearch').addEventListener('input', renderFonts);
+$('fontList').addEventListener('click', (e) => { const b = e.target.closest('.font-item'); if (b) chooseFont(b.dataset.f, true); });
+$('fontTry').onclick = () => chooseFont($('fontName').value, false);
+$('fontName').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); chooseFont($('fontName').value, false); } });
+$('fontClose').onclick = () => $('fontDialog').close();
 
 // ---------- list tools ----------
 $('undoBtn').onclick = undo;
@@ -1694,25 +2139,63 @@ $('exportMenu').addEventListener('click', (e) => {
 });
 
 // ---------- caption drawing (the same code for the preview and the saved video) ----------
+const safeFamily = (f) => String(f || '').replace(/["'\;{}<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
 function capFont(px) {
+  const fam = safeFamily(style.family), f = fam ? `"${fam}", ` : '';
   return style.font === 'heavy'
-    ? `900 ${px}px "Segoe UI Black", "Arial Black", "Segoe UI", system-ui, sans-serif`
-    : `600 ${px}px "Segoe UI", system-ui, sans-serif`;
+    ? `900 ${px}px ${f}"Segoe UI Black", "Arial Black", "Segoe UI", system-ui, sans-serif`
+    : `600 ${px}px ${f}"Segoe UI", system-ui, sans-serif`;
+}
+// where the caption block goes: Position, moved by the left/right and up/down sliders, always inside the picture
+function capPlace(W, H, blockH) {
+  let top = style.pos === 'top' ? H * 0.07 : style.pos === 'middle' ? H * 0.62 - blockH / 2 : H * 0.93 - blockH;
+  top -= (Number(style.dy) || 0) / 100 * H;
+  top = Math.max(H * 0.01, Math.min(H * 0.99 - blockH, top));
+  return { top, cx: W * (0.5 + (Number(style.dx) || 0) / 100) };
+}
+const clampX = (x, w, W) => Math.max(W * 0.01, Math.min(W * 0.99 - w, x));
+const kOffset = () => Math.max(-0.5, Math.min(0.5, Number(style.kOff) || 0));
+// one word: outline + colour; `frac` of it (from the left) is drawn in the sung colours
+function drawWord(ctx, text, x, y, w, frac, c) {
+  const pass = (fill, line) => {
+    if (c.bg === 'shadow') { ctx.lineJoin = 'round'; ctx.lineWidth = c.lw; ctx.strokeStyle = line; ctx.strokeText(text, x, y); }
+    ctx.fillStyle = fill; ctx.fillText(text, x, y);
+  };
+  if (c.bg === 'none') { ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = c.blur; }
+  if (frac >= 1) { pass(c.hl, c.olHl); return; }
+  pass(c.fg, c.ol);
+  if (frac <= 0) return;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x - c.lw * 2, y - c.h, c.lw * 2 + w * frac, c.h * 2); ctx.clip();
+  pass(c.hl, c.olHl);
+  ctx.restore();
+}
+function capColors(px, karaoke) {
+  const ol = style.ol || '#000000';
+  return { fg: style.color, hl: style.hl, ol, olHl: karaoke ? (style.olHl || '#ffffff') : ol, bg: style.bg, lw: Math.max(2, px * (style.font === 'heavy' ? 0.2 : 0.16)), blur: px * 0.12, h: px * 1.2 };
+}
+// Draws the caption(s) for time t. Returns the area used (for dragging it on the preview).
+function drawCaptions(ctx, t, W, H) {
+  if (style.anim === 'karaoke2') return drawKaraoke(ctx, cues, t, W, H);
+  const i = cueAt(cues, t);
+  return i >= 0 ? drawCaption(ctx, cues[i], t, W, H) : null;
 }
 function drawCaption(ctx, cue, t, W, H) {
-  if (!cue || !cue.text) return;
+  if (!cue || !cue.text) return null;
   const px = Math.round(capBase(W, H) * style.size / 100);
   const anim = style.anim || 'none';
   let words = wordTimes(cue);
-  if (!words.length) return;
+  if (!words.length) return null;
   if (style.upper) words.forEach((o) => (o.w = o.w.toLocaleUpperCase()));
-  const cur = anim === 'none' ? -1 : wordAt(words, t);
+  const tw = t - kOffset(); // "Karaoke timing": the highlight a little later or earlier than the word times
+  const cur = anim === 'none' ? -1 : wordAt(words, tw);
+  const fills = anim === 'fill' ? wordFill(words, tw) : null;
   let show = words.map((_, i) => i), popScale = 1;
   if (anim === 'pop') {
     const groups = popChunks(words, 3);
     const g = groups.find((x) => x.includes(Math.max(0, cur))) || groups[0];
     show = g;
-    const age = t - words[g[0]].s;
+    const age = tw - words[g[0]].s;
     popScale = age >= 0 && age < 0.12 ? 0.82 + 0.18 * (age / 0.12) : 1;
   }
   ctx.save();
@@ -1734,11 +2217,14 @@ function drawCaption(ctx, cue, t, W, H) {
     lastLine = o.line;
   });
   const lh = px * 1.35, blockH = lh * lines.length;
-  const top = style.pos === 'top' ? H * 0.07 : style.pos === 'middle' ? H * 0.62 - blockH / 2 : H * 0.93 - blockH;
-  const ox = W / 2, oy = top + blockH / 2;
-  if (popScale !== 1) { ctx.translate(ox, oy); ctx.scale(popScale, popScale); ctx.translate(-ox, -oy); }
+  const { top, cx } = capPlace(W, H, blockH);
+  const oy = top + blockH / 2;
+  if (popScale !== 1) { ctx.translate(cx, oy); ctx.scale(popScale, popScale); ctx.translate(-cx, -oy); }
+  const col = capColors(px, false);
+  let minX = W, maxX = 0;
   lines.forEach((ln, k) => {
-    const y = top + lh * k + lh / 2, x0 = W / 2 - ln.w / 2;
+    const y = top + lh * k + lh / 2, x0 = clampX(cx - ln.w / 2, ln.w, W);
+    minX = Math.min(minX, x0); maxX = Math.max(maxX, x0 + ln.w);
     if (style.bg === 'box') {
       ctx.fillStyle = 'rgba(0,0,0,.72)';
       const pad = px * 0.35;
@@ -1747,21 +2233,95 @@ function drawCaption(ctx, cue, t, W, H) {
     }
     ln.items.forEach((it) => {
       const o = words[it.i];
-      const on = anim === 'fill' ? it.i <= cur : it.i === cur;
-      const big = on && (anim === 'highlight' || anim === 'pop') ? 1.08 : 1;
-      const cx = x0 + it.x + it.w / 2;
+      const frac = anim === 'fill' ? fills[it.i] : it.i === cur ? 1 : 0;
+      const big = frac >= 1 && (anim === 'highlight' || anim === 'pop') ? 1.08 : 1;
+      const wx = x0 + it.x + it.w / 2;
       ctx.save();
-      ctx.translate(cx, y); if (big !== 1) ctx.scale(big, big);
-      if (style.bg === 'shadow') {
-        ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, px * (style.font === 'heavy' ? 0.2 : 0.16)); ctx.strokeStyle = '#000';
-        ctx.strokeText(o.w, -it.w / 2, 0);
-      }
-      if (style.bg === 'none') { ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.12; }
-      ctx.fillStyle = on ? style.hl : style.color;
-      ctx.fillText(o.w, -it.w / 2, 0);
+      ctx.translate(wx, y); if (big !== 1) ctx.scale(big, big);
+      drawWord(ctx, o.w, -it.w / 2, 0, it.w, frac, col);
       ctx.restore();
     });
   });
+  ctx.restore();
+  return { x: minX - px * 0.4, y: top, w: maxX - minX + px * 0.8, h: blockH };
+}
+// "Karaoke – 2 lines": see karaokePlan()
+let kCache = { list: null, lead: null, plan: null };
+function kPlanFor(list) {
+  const lead = style.leadIn !== false;
+  if (kCache.list !== list || kCache.lead !== lead || kCache.n !== list.length) kCache = { list, lead, n: list.length, plan: karaokePlan(list, { leadIn: lead }) };
+  return kCache.plan;
+}
+function drawKaraoke(ctx, list, t, W, H) {
+  const plan = kPlanFor(list);
+  const vis = karaokeVisible(plan, t);
+  if (!vis.length) return null;
+  const px = Math.round(capBase(W, H) * style.size / 100);
+  const lh = px * 1.5, blockH = lh * 2;
+  const { top, cx } = capPlace(W, H, blockH);
+  const region = W * 0.84, tw = t - kOffset();
+  let box = null;
+  ctx.save();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  for (const v of vis) {
+    const cue = list[v.i];
+    const words = wordTimes(cue);
+    if (!words.length) continue;
+    if (style.upper) words.forEach((o) => (o.w = o.w.toLocaleUpperCase()));
+    let rpx = px;
+    const measure = () => {
+      ctx.font = capFont(rpx);
+      const sp = ctx.measureText(' ').width;
+      let x = 0;
+      return words.map((o, k) => {
+        const w = ctx.measureText(o.w).width, gap = k && (o.sp || (o.line !== words[k - 1].line && !CJK.test(o.w))) ? sp : 0;
+        const it = { x: x + gap, w }; x += gap + w; return it;
+      });
+    };
+    let items = measure();
+    const width = () => items[items.length - 1].x + items[items.length - 1].w;
+    if (width() > W * 0.94) { rpx = Math.max(8, Math.floor(rpx * W * 0.94 / width())); items = measure(); }
+    const rw = width();
+    const x0 = clampX(v.row === 0 ? cx - region / 2 : cx + region / 2 - rw, rw, W);
+    const y = top + lh * (v.row + 0.5);
+    const col = capColors(rpx, true);
+    if (style.bg === 'box') {
+      ctx.fillStyle = 'rgba(0,0,0,.72)';
+      const pad = rpx * 0.35;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x0 - pad, y - lh / 2, rw + pad * 2, lh, rpx * 0.15); ctx.fill(); }
+      else ctx.fillRect(x0 - pad, y - lh / 2, rw + pad * 2, lh);
+    }
+    const fills = wordFill(words, tw);
+    words.forEach((o, k) => { ctx.save(); drawWord(ctx, o.w, x0 + items[k].x, y, items[k].w, fills[k], col); ctx.restore(); });
+    // lead-in: 4 dots above the start of the line, one goes away per beat, the last one exactly when the line starts
+    const n = leadDots(plan[v.i].lead, tw);
+    if (n) {
+      const r = Math.max(3, rpx * 0.17);
+      ctx.lineWidth = Math.max(1.5, r * 0.4); ctx.strokeStyle = col.olHl; ctx.fillStyle = style.hl;
+      for (let k = 0; k < n; k++) { ctx.beginPath(); ctx.arc(x0 + r * 1.2 + k * r * 3, y - rpx * 0.85 - r, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    }
+    const b = { x: x0 - rpx * 0.4, y: y - lh / 2, w: rw + rpx * 0.8, h: lh };
+    box = box ? { x: Math.min(box.x, b.x), y: Math.min(box.y, b.y), w: Math.max(box.x + box.w, b.x + b.w) - Math.min(box.x, b.x), h: Math.max(box.y + box.h, b.y + b.h) - Math.min(box.y, b.y) } : b;
+  }
+  ctx.restore();
+  return box;
+}
+// Free users may try the two-line karaoke in the preview, with this mark on top (screen only).
+const previewMark = () => style.anim === 'karaoke2' && !unlocked();
+function drawWatermark(ctx, W, H, box) {
+  const text = 'PREVIEW ★ CaptionPress Pro';
+  const px = Math.max(12, Math.round(Math.min(W, H * 1.7) * 0.05));
+  ctx.save();
+  ctx.font = `800 ${px}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  const put = (x, y, rot, a) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.globalAlpha = a;
+    ctx.lineWidth = px * 0.14; ctx.strokeStyle = '#000'; ctx.strokeText(text, 0, 0);
+    ctx.fillStyle = '#fff'; ctx.fillText(text, 0, 0);
+    ctx.restore();
+  };
+  put(W / 2, H * 0.4, -0.16, 0.6);
+  put(box ? box.x + box.w / 2 : W / 2, box ? box.y + box.h / 2 : H * 0.85, 0, 0.42);
   ctx.restore();
 }
 // ---------- burn-in ----------
@@ -1782,6 +2342,7 @@ function openBurn(mode) {
   $('burnDialog').showModal();
 }
 async function startBurn() {
+  if (!unlocked()) { $('burnDialog').close(); openPro(limitReason({ burn: true }, false)); return; }
   const mime = pickMime();
   if (!mime) { $('burnText').textContent = 'Recording video is not supported on this computer.'; return; }
   video.pause();
@@ -1815,14 +2376,13 @@ async function startBurn() {
   burn = { v, rec, ac, stop: false };
   const draw = () => {
     if (hasPic) ctx.drawImage(v, 0, 0, W, H); else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
-    const i = cueAt(cues, v.currentTime);
-    if (i >= 0 && showCaps) drawCaption(ctx, cues[i], v.currentTime, W, H);
+    if (showCaps) drawCaptions(ctx, v.currentTime, W, H);
     const d = v.duration || 1;
     $('burnBar').style.width = (v.currentTime / d * 100) + '%';
     $('burnText').textContent = `Recording… ${fmtClock(v.currentTime)} of ${fmtClock(d)}. Keep this window open.`;
   };
   let timer = 0;
-  const loop = () => { draw(); if (!v.ended && !burn.stop) { if (hasPic && v.requestVideoFrameCallback) v.requestVideoFrameCallback(loop); } };
+  const loop = () => { if (!burn) return; draw(); if (!v.ended && !burn.stop) { if (hasPic && v.requestVideoFrameCallback) v.requestVideoFrameCallback(loop); } };
   const done = new Promise((resolve) => { rec.onstop = resolve; });
   draw();
   rec.start(1000);
@@ -1911,8 +2471,7 @@ async function startCut() {
   const total = cutPlan.keep.reduce((n, k) => n + k.end - k.start, 0); let doneT = 0;
   const draw = () => {
     if (hasPic) ctx.drawImage(v, 0, 0, W, H); else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
-    const i = cueAt(cues, v.currentTime);
-    if (i >= 0 && showCaps) drawCaption(ctx, cues[i], v.currentTime, W, H);
+    if (showCaps) drawCaptions(ctx, v.currentTime, W, H);
   };
   const done = new Promise((r) => { rec.onstop = r; });
   let started = false;
@@ -1968,6 +2527,7 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); if (file) video.paused ? video.play() : video.pause(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'h') { e.preventDefault(); $('findBtn').click(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('fileIn').click(); return; }
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveProject(); return; }
   if (typing) return;
   if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
   else if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); redo(); }
@@ -2189,7 +2749,7 @@ async function translateLines() {
         const n = grp.to - grp.from + 1;
         const weights = list.slice(grp.from, grp.to + 1).map((c) => c.text.length);
         const pieces = distribute(res.out[k] || grp.text, weights);
-        for (let i = 0; i < n; i++) list[grp.from + i].text = wrapText(pieces[i] || '', style.chars);
+        for (let i = 0; i < n; i++) { list[grp.from + i].text = wrapText(pieces[i] || '', style.chars); delete list[grp.from + i].wt; }
       });
       const done = Math.min(groups.length, g + BATCH);
       trBarSet(done / groups.length * 100);

@@ -208,3 +208,22 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .lyrics-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lyrics .muted { font-weight: 400; opacity: .7; }
 .update-bar { display: flex; align-items: center; gap: 12px; bottom: 70px; }
+
+/* fonts, karaoke, feedback */
+.font-pick { text-align: left; font-weight: 600; padding: 7px 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.st-centre { align-self: center; justify-self: start; }
+.frame.cap-hover video { cursor: move; }
+.font-dlg { width: min(560px, calc(100vw - 24px)); }
+.font-dlg input[type=search] { margin: 6px 0; }
+.font-list { display: flex; flex-direction: column; gap: 2px; max-height: min(360px, 50vh); overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.font-item { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; text-align: left; background: transparent; color: var(--text); border: 1px solid transparent; padding: 6px 9px; border-radius: 8px; font-size: 13px; }
+.font-item:hover { background: var(--accent-2); }
+.font-item.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.font-item .fn { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.font-item .fs { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); max-width: 55%; }
+.font-item .fw { color: #b45309; font-size: 12px; }
+.font-type { display: flex; gap: 6px; margin-top: 8px; }
+.font-type input { flex: 1; min-width: 0; }
+.pro-note { background: var(--hi); border-radius: 8px; padding: 6px 10px; margin: 4px 0; }
+.feedback { font-size: 12px; opacity: .9; }
+.feedback a { color: var(--accent); }

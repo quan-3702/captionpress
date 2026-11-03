@@ -35,6 +35,8 @@
     <div id="menu" class="menu" hidden>
       <button id="recBtn">🎙 Record a meeting…</button>
       <button id="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
+      <button id="projSaveBtn">💾 Save project… <small>Ctrl+S</small></button>
+      <button id="projOpenBtn">📂 Open project…</button>
       <button id="importBtn">Open a subtitle file (.srt / .vtt)…</button>
       <button id="clearBtn" class="danger">Remove all subtitle lines…</button>
       <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
@@ -43,6 +45,7 @@
     </div>
     <input id="fileIn" type="file" accept="video/*,audio/*,.mkv,.mov,.m4a,.mp3,.wav" hidden>
     <input id="subIn" type="file" accept=".srt,.vtt,text/vtt" hidden>
+    <input id="projIn" type="file" accept=".cpproj,application/json" hidden>
   </header>
 
   <main class="layout">
@@ -74,17 +77,26 @@
           <summary>Caption look</summary>
           <div id="presets" class="presets"></div>
           <div class="style-grid">
-            <label class="field">Animation<select id="stAnim"><option value="none">None – whole line</option><option value="highlight">Highlight each word</option><option value="fill">Karaoke – fill as spoken</option><option value="pop">Pop-up words (TikTok)</option></select></label>
-            <label id="stHlRow" class="field">Highlight colour<input id="stHl" type="color"></label>
+            <label class="field">Animation<select id="stAnim"><option value="none">None – whole line</option><option value="highlight">Highlight each word</option><option value="fill">Karaoke – fill as spoken</option><option value="karaoke2">Karaoke – 2 lines (lyrics videos)</option><option value="pop">Pop-up words (TikTok)</option></select></label>
+            <label id="stHlRow" class="field"><span id="stHlLbl">Highlight colour</span><input id="stHl" type="color"></label>
             <label class="field">Text size<input id="stSize" type="range" min="3" max="12" step="0.5"></label>
             <label class="field">Position<select id="stPos"><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select></label>
-            <label class="field">Text colour<input id="stColor" type="color"></label>
+            <label class="field"><span id="stColorLbl">Text colour</span><input id="stColor" type="color"></label>
             <label class="field">Background<select id="stBg"><option value="box">Dark box</option><option value="shadow">Outline only</option><option value="none">None</option></select></label>
-            <label class="field">Font<select id="stFont"><option value="normal">Normal</option><option value="heavy">Extra bold</option></select></label>
+            <label id="stOlRow" class="field">Outline colour<input id="stOl" type="color"></label>
+            <label id="stOlHlRow" class="field">Sung outline<input id="stOlHl" type="color"></label>
+            <div class="field">Font<button id="stFamily" type="button" class="ghost font-pick" title="Choose any font installed on this PC">Segoe UI (default)</button></div>
+            <label class="field">Weight<select id="stFont"><option value="normal">Normal</option><option value="heavy">Extra bold</option></select></label>
             <label class="field">Letters per line<select id="stChars"><option value="32">32 – phone / vertical</option><option value="42">42 – standard</option><option value="56">56 – wide</option></select></label>
+            <label class="field">Move left / right<input id="stDx" type="range" min="-45" max="45" step="1"></label>
+            <label class="field">Move up / down<input id="stDy" type="range" min="-90" max="90" step="1"></label>
+            <label id="stKOffRow" class="field">Karaoke timing <span id="stKOffVal" class="muted"></span><input id="stKOff" type="range" min="-0.5" max="0.5" step="0.05" title="Move the word highlight later (right) or earlier (left)"></label>
             <label class="check"><input id="stUpper" type="checkbox"> CAPITAL LETTERS</label>
+            <label id="stLeadRow" class="check"><input id="stLead" type="checkbox"> Lead-in dots after a break</label>
+            <button id="stCentre" type="button" class="ghost small st-centre">⌖ Centre position</button>
           </div>
-          <p class="hint">Used for the preview and for videos saved with captions burned in (Pro) – word animations included, ready for TikTok, Reels and Shorts. SRT and VTT files keep only the words and times.</p>
+          <p id="stProNote" class="hint pro-note" hidden>★ You are trying <b>Karaoke – 2 lines</b>: the preview shows a PREVIEW mark. Pro removes it and saves the karaoke video.</p>
+          <p class="hint">Used for the preview and for videos saved with captions burned in (Pro) – word animations included, ready for TikTok, Reels and Shorts. Drag the caption on the video to move it. SRT and VTT files keep only the words and times.</p>
         </details>
         <details id="voiceBox" class="style-box">
           <summary>🎙 AI voice-over <span class="badge pro-only">PRO</span></summary>
@@ -121,6 +133,7 @@
         </details>
         <button id="genBtn" class="primary big wide" disabled>✨ Create subtitles</button>
         <p id="genHint" class="hint"></p>
+        <p class="hint feedback">💬 Something not working the way you want? Tell me – <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress feedback">thequan03072002@gmail.com</a>. I read every message and improve the app.</p>
         <div id="prog" class="prog" hidden>
           <div class="bar"><i id="progBar"></i></div>
           <div class="prog-row"><span id="progText"></span><button id="cancelBtn" class="ghost small">Stop</button></div>
@@ -248,17 +261,28 @@
       <li><strong>Accurate, Very accurate and Most accurate quality</strong> – far fewer mistakes, best for Vietnamese and other languages</li>
       <li><strong>Translate</strong> speech in 30 languages into English subtitles</li>
       <li><strong>Cut out long pauses</strong> – save a shorter, snappier video in one click</li>
-      <li><strong>Save a video with captions burned in</strong> – with animated word-by-word captions (karaoke, pop-up words) for TikTok, Reels and Shorts</li>
+      <li><strong>Save a video with captions burned in</strong> – with animated word-by-word captions (karaoke, two-line karaoke for lyrics videos, pop-up words) for TikTok, Reels and Shorts</li>
       <li><strong>Translate subtitles</strong> from English into Vietnamese, Spanish, French, German, Chinese, Japanese and 13 more languages</li>
       <li><strong>Meeting notes</strong> – finds who is speaking, remembers voices, talk-time charts, key moments and Word minutes</li>
       <li><strong>AI voice-over</strong> – natural voices in 20+ languages read your subtitles aloud; save the video or a WAV file</li>
     </ul>
+    <p class="hint feedback">💬 Something not working the way you want? Tell me – <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress feedback">thequan03072002@gmail.com</a>. I read every message and improve the app.</p>
     <p id="proMsg" class="pro-msg" hidden></p>
     <div class="row-btns">
       <button id="buyBtn" class="primary">Unlock Pro</button>
       <button id="restoreBtn" class="ghost">Restore purchase</button>
       <button id="closePro" class="ghost">Not now</button>
     </div>
+  </dialog>
+
+  <dialog id="fontDialog" class="dlg font-dlg">
+    <h2>Choose a font</h2>
+    <p class="hint">Any font installed on this PC can be used for the captions – in the preview and in the saved video. Pick one with Vietnamese letters (ă, ơ, ư, ệ…) for Vietnamese lyrics.</p>
+    <div class="vc-btns"><button id="fontLocal" class="primary small">🖥 Use fonts on this PC…</button><span id="fontMsg" class="hint"></span></div>
+    <input id="fontSearch" type="search" placeholder="Search fonts" aria-label="Search fonts">
+    <div id="fontList" class="font-list"></div>
+    <div class="font-type"><input id="fontName" type="text" placeholder="…or type a font name, e.g. UVN Van" aria-label="Font name"><button id="fontTry" class="ghost small">Use this font</button></div>
+    <div class="row-btns"><button id="fontClose" class="ghost">Close</button></div>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
