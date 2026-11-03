@@ -199,3 +199,11 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
   .transport input[type=range] { order: 9; flex-basis: 100%; }
   .cue .meta { flex-wrap: wrap; }
 }
+
+/* lyrics / script */
+.lyrics { margin: 4px 0 10px; border: 1px solid var(--line, #3334); border-radius: 10px; padding: 6px 10px; }
+.lyrics summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 2px 0; }
+.lyrics.has summary::after { content: ' ✓'; color: #16a34a; }
+.lyrics textarea { width: 100%; margin: 8px 0 6px; font: inherit; font-size: 13px; resize: vertical; min-height: 90px; }
+.lyrics-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lyrics .muted { font-weight: 400; opacity: .7; }

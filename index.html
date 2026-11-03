@@ -113,6 +113,12 @@
           <label class="field">Quality<select id="model"></select></label>
         </div>
         <label class="field">Subtitles in<select id="task"><option value="transcribe">The same language as spoken</option><option value="translate">English (translate) – PRO</option></select></label>
+        <details id="lyricsBox" class="lyrics">
+          <summary>📄 I have the lyrics or script <span class="muted">(optional)</span></summary>
+          <p class="hint">Paste the exact words, one subtitle per line – or open a .txt file. CaptionPress keeps your words exactly as written and only works out when each line is sung or spoken. For songs, write out every repeated chorus.</p>
+          <textarea id="lyricsIn" rows="6" spellcheck="false" placeholder="Paste lyrics or a script here…&#10;One line = one subtitle"></textarea>
+          <div class="lyrics-row"><button id="lyricsOpen" class="ghost small">📂 Open .txt file…</button><button id="lyricsClear" class="ghost small">Clear</button><span id="lyricsInfo" class="hint"></span></div>
+        </details>
         <button id="genBtn" class="primary big wide" disabled>✨ Create subtitles</button>
         <p id="genHint" class="hint"></p>
         <div id="prog" class="prog" hidden>

@@ -318,6 +318,11 @@ const round3 = (x) => Math.round(x * 1000) / 1000;
 function wordsToCues(chunks, offset, windowEnd, maxChars, samples) {
   maxChars = maxChars || 42;
   const limit = maxChars * 2;
+  const words = recWords(chunks, offset, windowEnd, samples);
+  return groupWords(words, maxChars, limit);
+}
+// Whisper word chunks (relative to the window) -> [{s, e, t}] in seconds, with starts moved onto the speech.
+function recWords(chunks, offset, windowEnd, samples) {
   const words = [];
   let last = 0;
   for (const c of chunks || []) {
@@ -348,6 +353,9 @@ function wordsToCues(chunks, offset, windowEnd, maxChars, samples) {
       if (w.e < w.s + 0.15) w.e = Math.min(w.s + len, i + 1 < words.length ? Math.max(w.s + 0.15, words[i + 1].s) : w.s + len);
     }
   }
+  return words;
+}
+function groupWords(words, maxChars, limit) {
   const out = [];
   let cur = null;
   const flush = () => { if (cur) { const text = cleanText(cur.t); if (text) out.push({ start: cur.s, end: cur.e, text, w0e: cur.w0e, wLs: cur.wLs }); } cur = null; };
@@ -368,6 +376,118 @@ function wordsToCues(chunks, offset, windowEnd, maxChars, samples) {
   }
   flush();
   return out;
+}
+
+// ---- lyrics / script alignment ----
+// The user already has the exact words (song lyrics, a script). Speech recognition is only used for the timing:
+// the recognised words are matched to the user's words, and every line of the text becomes one subtitle.
+const normWord = (w) => String(w || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+const bareWord = (w) => normWord(w).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
+function scriptLines(text) {
+  return String(text || '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/\s+/g, ' ').trim())
+    .filter((l) => l && !/^\[.*\]$/.test(l)); // skip "[Chorus]"-style headings
+}
+// Split a text into units for matching: words, or single characters for languages written without spaces.
+function scriptTokens(line) {
+  const out = [];
+  for (const piece of line.split(' ')) {
+    if (/[぀-ヿ㐀-鿿가-힯฀-๿]/.test(piece) && normWord(piece).length > 1) {
+      for (const ch of normWord(piece)) out.push(ch);
+    } else if (normWord(piece)) out.push(normWord(piece));
+  }
+  return out;
+}
+// Banded global alignment of the user's tokens (a) to the recognised tokens (b). Returns, for every token of a,
+// the index in b it matched (or -1).
+function alignTokens(a, b) {
+  const n = a.length, m = b.length;
+  const map = new Int32Array(n).fill(-1);
+  if (!n || !m) return map;
+  const band = Math.max(60, Math.ceil(Math.abs(n - m) * 1.2) + 60);
+  const W = 2 * band + 1;
+  const ab = a.map(bareWord), bb = b.map(bareWord);
+  const cost = (i, j) => (a[i] === b[j] ? 0 : ab[i] === bb[j] ? 0.3 : 1.2);
+  const GAP = 0.9;
+  const center = (i) => Math.round(i * m / n);
+  const D = new Float32Array((n + 1) * W).fill(Infinity);
+  const P = new Uint8Array((n + 1) * W); // 1 = diagonal, 2 = up (skip a word of a), 3 = left (skip a word of b)
+  const at = (i, j) => { const k = j - center(i) + band; return k >= 0 && k < W ? i * W + k : -1; };
+  for (let i = 0; i <= n; i++) {
+    const c = center(i);
+    for (let j = Math.max(0, c - band); j <= Math.min(m, c + band); j++) {
+      const k = at(i, j);
+      if (i === 0 && j === 0) { D[k] = 0; continue; }
+      let best = Infinity, from = 0, x;
+      if (i > 0 && j > 0 && (x = at(i - 1, j - 1)) >= 0 && D[x] + cost(i - 1, j - 1) < best) { best = D[x] + cost(i - 1, j - 1); from = 1; }
+      if (i > 0 && (x = at(i - 1, j)) >= 0 && D[x] + GAP < best) { best = D[x] + GAP; from = 2; }
+      if (j > 0 && (x = at(i, j - 1)) >= 0 && D[x] + GAP * (i === 0 || i === n ? 0.6 : 1) < best) { best = D[x] + GAP * (i === 0 || i === n ? 0.6 : 1); from = 3; }
+      D[k] = best; P[k] = from;
+    }
+  }
+  let i = n, j = m;
+  if (at(n, m) < 0 || !isFinite(D[at(n, m)])) return map;
+  while (i > 0 || j > 0) {
+    const k = at(i, j);
+    if (k < 0) break;
+    const f = P[k];
+    if (f === 1) { if (a[i - 1] && cost(i - 1, j - 1) < 1) map[i - 1] = j - 1; else map[i - 1] = -2 - (j - 1); i--; j--; }
+    else if (f === 2) i--;
+    else if (f === 3) j--;
+    else break;
+  }
+  return map;
+}
+// words: recognised [{s, e, t}] in time order. Returns cues, one per line of the text (long lines split).
+function alignScript(text, words, maxChars, maxSec) {
+  maxChars = maxChars || 42;
+  const lines = scriptLines(text);
+  const toks = [], owner = [];
+  lines.forEach((l, li) => scriptTokens(l).forEach((t) => { toks.push(t); owner.push(li); }));
+  const recT = [], recW = [];
+  for (const w of words || []) for (const t of scriptTokens(cleanText(w.t))) { recT.push(t); recW.push(w); }
+  const map = alignTokens(toks, recT);
+  // time for each token: exact/near match -> that word; substitution -> that word (less sure); gaps -> interpolate
+  const ts = new Array(toks.length).fill(null);
+  for (let i = 0; i < toks.length; i++) {
+    const v = map[i];
+    if (v >= 0) ts[i] = { s: recW[v].s, e: recW[v].e, sure: true };
+    else if (v <= -2) ts[i] = { s: recW[-2 - v].s, e: recW[-2 - v].e, sure: false };
+  }
+  // drop "unsure" times that go backwards
+  let lastS = -Infinity;
+  for (let i = 0; i < ts.length; i++) { if (ts[i]) { if (ts[i].s < lastS - 0.05) ts[i] = null; else lastS = ts[i].s; } }
+  const perWord = 0.35;
+  const prevK = new Int32Array(ts.length), nextK = new Int32Array(ts.length);
+  for (let i = 0, p = -1; i < ts.length; i++) { prevK[i] = p; if (ts[i]) p = i; }
+  for (let i = ts.length - 1, q = -1; i >= 0; i--) { nextK[i] = q; if (ts[i]) q = i; }
+  for (let i = 0; i < ts.length; i++) {
+    if (ts[i] && ts[i].s != null) continue;
+    const prev = prevK[i] >= 0 ? prevK[i] : null, next = nextK[i] >= 0 ? nextK[i] : null;
+    if (prev != null && next != null) {
+      const span = ts[next].s - ts[prev].e, steps = next - prev;
+      const s = ts[prev].e + span * (i - prev - 0.5) / steps;
+      ts[i] = { s, e: s + Math.min(perWord, span / steps) };
+    } else if (prev != null) { const s = ts[prev].e + (i - prev - 1) * perWord; ts[i] = { s, e: s + perWord }; }
+    else if (next != null) { const s = Math.max(0, ts[next].s - (next - i) * perWord); ts[i] = { s, e: s + perWord }; }
+    else { ts[i] = { s: i * perWord, e: i * perWord + perWord }; }
+  }
+  const cues = [];
+  const byLine = lines.map(() => []);
+  owner.forEach((o, k) => byLine[o].push(k));
+  lines.forEach((line, li) => {
+    const idx = byLine[li];
+    if (!idx.length) return;
+    const start = ts[idx[0]].s, end = Math.max(ts[idx[idx.length - 1]].e, start + 0.4);
+    const parts = splitText(line, maxChars * 2);
+    const total = parts.reduce((x, p) => x + p.length, 0) || 1;
+    let t = start;
+    parts.forEach((p, k) => {
+      const e = k === parts.length - 1 ? end : t + (end - start) * p.length / total;
+      cues.push({ start: round3(t), end: round3(e), text: wrapText(p, maxChars) });
+      t = e;
+    });
+  });
+  return tidy(cues.filter((c) => maxSec == null || c.start < maxSec));
 }
 
 // Move cue edges onto the real speech: Whisper sometimes starts the first word of a line during the
@@ -983,7 +1103,7 @@ function limitReason(opts, pro) {
 }
 
 if (typeof module !== 'undefined') module.exports = {
-  SR, MODELS, LANGS, wordsToCues, snapToSpeech, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
+  SR, MODELS, LANGS, wordsToCues, snapToSpeech, recWords, groupWords, alignScript, alignTokens, scriptLines, scriptTokens, normWord, fmtTime, fmtShort, fmtClock, parseTime, cleanText, wrapText, splitText, segmentsToCues, tidy,
   filterSegments, chunksToSegments, rms, quietPoint, planWindows, isSilent, toSRT, toVTT, toTXT, toTXTStamped,
   parseSubs, cueAt, removeFillers, findPauses, keepParts, retimeCues, wordTimes, wordAt, popChunks, CAP_PRESETS, VOICES, SAMPLE_LINE, TR_LANGS, sentenceGroups, distribute, langOfVoice, planVoice, splitCue, mergeCue, shiftCues, replaceAll, rewrapAll, limitReason,
   SPK_COLORS, SPK_COLORS_DARK, speakerPieces, unitVec, agglomerate, cutTree, diarize, spkName, speakerStats, speakerTurns, toTXTSpeakers, toCSVSpeakers, centroid, matchVoices, rememberVoice, crc32, makeZip, minutesDocx, MINUTES_TEXT,
@@ -1342,7 +1462,9 @@ async function generate() {
     const ready = await call({ type: 'load', model: MODELS[opts.model].id, big: !!MODELS[opts.model].gpu }, 'load');
     if (cancelled) return;
     let found = [];
-    const startList = cues.length ? cues : [];
+    const script = ($('lyricsIn').value || '').trim();
+    const heard = []; // recognised words with times, used when the user gave the exact words
+    const startList = cues.length && !script ? cues : [];
     let done = 0;
     const tStart = performance.now();
     for (const w of windows) {
@@ -1353,6 +1475,13 @@ async function generate() {
         const res = await call({ type: 'run', id, audio: slice, language: opts.lang, task: opts.task, words: true }, id, [slice.buffer]);
         if (cancelled) return;
         let made;
+        if (script) {
+          if (res.words) heard.push(...recWords(res.chunks, w.start, w.end, samples));
+          else for (const sg of filterSegments(chunksToSegments(res.chunks, w.start, w.end))) {
+            const ws = cleanText(sg.text).split(' '), d = (sg.end - sg.start) / Math.max(1, ws.length);
+            ws.forEach((t, k) => heard.push({ s: sg.start + k * d, e: sg.start + (k + 1) * d, t: ' ' + t }));
+          }
+        }
         if (res.words) {
           const lines = snapToSpeech(filterSegments(wordsToCues(res.chunks, w.start, w.end, style.chars, samples)), samples);
           made = lines.map((c) => ({ start: c.start, end: c.end, text: wrapText(c.text, style.chars) }));
@@ -1368,10 +1497,14 @@ async function generate() {
       const left = done > 0 ? spent / done * (maxSec - done) : 0;
       setProg(5 + 95 * done / maxSec, `Listening… ${fmtClock(done)} of ${fmtClock(maxSec)}${left > 20 ? ` · about ${Math.ceil(left / 60)} min left` : ''}${ready.device === 'wasm' ? ' (slower mode – no graphics acceleration)' : ''}`);
     }
+    if (script) {
+      cues = alignScript(script, heard, style.chars, maxSec < total ? maxSec : null);
+      renderList(); renderCap();
+    }
     hist.push(before); fut = []; genBefore = null;
     autosave(); updateButtons();
     const secs = Math.round((performance.now() - t0) / 1000);
-    setProg(100, `Done – ${cues.length} lines in ${fmtClock(secs)}. Check the words, then save.`);
+    setProg(100, script ? `Done – ${cues.length} lines from your text, timed in ${fmtClock(secs)}. Play it once to check the timing, then save.` : `Done – ${cues.length} lines in ${fmtClock(secs)}. Check the words, then save.`);
     if (maxSec < total) {
       $('genHint').innerHTML = `The free version made subtitles for the first ${FREE_MINUTES} minutes. <a href="#" id="genPro">Get Pro</a> for the whole video.`;
       const a = $('genPro'); if (a) a.onclick = (e) => { e.preventDefault(); openPro(`This video is ${fmtClock(total)} long. Pro makes subtitles for the whole video.`); };
@@ -1399,6 +1532,25 @@ function cancelGen() {
 }
 $('genBtn').onclick = generate;
 $('cancelBtn').onclick = cancelGen;
+// lyrics / script
+function lyricsInfo() {
+  const n = scriptLines($('lyricsIn').value).length;
+  $('lyricsInfo').textContent = n ? `${n} line${n === 1 ? '' : 's'} – each becomes one subtitle with your exact words.` : '';
+  $('lyricsBox').classList.toggle('has', n > 0);
+}
+$('lyricsIn').addEventListener('input', lyricsInfo);
+$('lyricsOpen').onclick = () => {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.txt,.lrc,.srt,.vtt,text/plain';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    let t = await f.text();
+    if (/-->/.test(t)) t = parseSubs(t).map((c) => c.text.replace(/\n/g, ' ')).join('\n'); // SRT/VTT: keep only the words
+    t = t.replace(/^\s*\[(\d+:)?\d+[:.]\d+(\.\d+)?\]\s*/gm, ''); // LRC time tags
+    $('lyricsIn').value = t.trim(); $('lyricsBox').open = true; lyricsInfo();
+  };
+  inp.click();
+};
+$('lyricsClear').onclick = () => { $('lyricsIn').value = ''; lyricsInfo(); };
 
 function updateGenUI() {
   const pro = unlocked();
