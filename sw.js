@@ -1,6 +1,6 @@
-const CACHE = 'captionpress-v17';
+const CACHE = 'captionpress-v18';
 const RUNTIME = 'captionpress-lib-v1';
-const ASSETS = ['./', 'index.html', 'help.html', 'style.css', 'app.js', 'worker.js', 'tts-worker.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'];
+const ASSETS = ['./', 'index.html', 'help.html', 'style.css', 'app.js', 'worker.js', 'tts-worker.js', 'manifest.json', 'privacy.html', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
