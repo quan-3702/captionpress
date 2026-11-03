@@ -2808,4 +2808,19 @@ setPro(isPro);
 updateGenUI();
 renderList();
 checkPro().then(() => setPro(isPro));
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  // New versions: the service worker installs the update in the background; switch to it right away when nothing is open,
+  // otherwise offer a restart so an update never needs two app restarts to show up.
+  const hadSW = !!navigator.serviceWorker.controller;
+  let swReloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadSW || swReloading) return;
+    if (!file && !busy && !rec && !cues.length) { swReloading = true; location.reload(); return; }
+    const b = document.createElement('div');
+    b.className = 'toast update-bar';
+    b.innerHTML = '✨ A new version of CaptionPress is ready. <button class="primary small">Restart now</button>';
+    b.querySelector('button').onclick = () => { swReloading = true; location.reload(); };
+    document.body.appendChild(b);
+  });
+  navigator.serviceWorker.register('sw.js').then((r) => { r.update().catch(() => {}); }).catch(() => {});
+}

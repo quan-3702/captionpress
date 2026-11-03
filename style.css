@@ -207,3 +207,4 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .lyrics textarea { width: 100%; margin: 8px 0 6px; font: inherit; font-size: 13px; resize: vertical; min-height: 90px; }
 .lyrics-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lyrics .muted { font-weight: 400; opacity: .7; }
+.update-bar { display: flex; align-items: center; gap: 12px; bottom: 70px; }
