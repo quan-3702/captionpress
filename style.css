@@ -191,3 +191,11 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 
 .cut-info { background: var(--accent-2); border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-weight: 600; min-height: 1.5em; }
 .cut-info:empty { display: none; }
+@media (max-width: 560px) {
+  .topbar { flex-wrap: wrap; gap: 8px; }
+  .top-btns { flex-wrap: wrap; gap: 6px; }
+  .menu { top: 100%; min-width: 0; max-width: calc(100vw - 32px); }
+  .transport { flex-wrap: wrap; }
+  .transport input[type=range] { order: 9; flex-basis: 100%; }
+  .cue .meta { flex-wrap: wrap; }
+}

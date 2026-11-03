@@ -6,6 +6,7 @@ const PRO_SKU = 'captionpress_pro';
 const PRO_IDS = [PRO_SKU];
 let STORE_URL = 'https://apps.microsoft.com/detail/9P8M0CKNNJPM';
 let proAvailable = false; // Pro limits apply only when the Store actually sells the add-on
+try { if ('getDigitalGoodsService' in window && localStorage.getItem('captionpress-proavail') === '1') proAvailable = true; } catch (_) {} // keep Pro limits when offline
 let proSku = PRO_SKU;
 let isPro = false;
 try { isPro = localStorage.getItem('captionpress-pro') === '1'; } catch (_) {}
@@ -25,17 +26,26 @@ function setPro(v) {
   document.body.classList.toggle('unlocked', unlocked());
   if (typeof renderAll === 'function') renderAll();
 }
+async function checkProAfterBuy() {
+  for (let i = 0; i < 6; i++) {
+    if (await checkPro()) return true;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  proMessage('Thank you! If Pro is not unlocked within a minute, click “Restore purchase”.');
+  return false;
+}
 async function checkPro() {
   const svc = await billing();
   if (!svc) return false;
   try {
     const details = await svc.getDetails(PRO_IDS).catch(() => []);
-    proAvailable = details.length > 0;
+    if (details.length) { proAvailable = true; try { localStorage.setItem('captionpress-proavail', '1'); } catch (_) {} }
     if (details[0]) { proSku = details[0].itemId; if (!PRO_IDS.includes(proSku)) PRO_IDS.push(proSku); }
     const list = await svc.listPurchases();
     const owned = list.some((p) => PRO_IDS.includes(p.itemId));
-    setPro(owned);
-    return owned;
+    if (owned || details.length) { setPro(owned); return owned; }
+    setPro(isPro); // Store did not answer (offline): keep what we knew
+    return isPro;
   } catch (_) { return isPro; }
 }
 function proMessage(text) { const m = $('proMsg'); m.hidden = !text; m.textContent = text || ''; }
@@ -70,7 +80,7 @@ async function buyPro() {
     proMessage('Purchase could not be completed: ' + (e.message || e));
     return;
   }
-  if (await checkPro()) { proMessage('Thank you! Pro is unlocked. ★'); setTimeout(() => $('proDialog').close(), 1500); }
+  if (await checkProAfterBuy()) { proMessage('Thank you! Pro is unlocked. ★'); setTimeout(() => $('proDialog').close(), 1500); }
 }
 function needsPro(reason) {
   if (unlocked()) return false;
@@ -466,11 +476,13 @@ function planWindows(samples, maxSec) {
 const isSilent = (samples, w) => rms(samples, w.start * SR, w.end * SR) < 0.0025;
 
 // ---- subtitle files ----
+// an empty line inside a cue would end it early in SRT/VTT files
+const cueBody = (t) => String(t).split('\n').filter((l) => l.trim()).join('\n');
 function toSRT(cues) {
-  return cues.map((c, i) => `${i + 1}\n${fmtTime(c.start, ',')} --> ${fmtTime(c.end, ',')}\n${c.text}\n`).join('\n');
+  return cues.map((c, i) => `${i + 1}\n${fmtTime(c.start, ',')} --> ${fmtTime(c.end, ',')}\n${cueBody(c.text)}\n`).join('\n');
 }
 function toVTT(cues) {
-  return 'WEBVTT\n\n' + cues.map((c) => `${fmtTime(c.start, '.')} --> ${fmtTime(c.end, '.')}\n${c.text}\n`).join('\n');
+  return 'WEBVTT\n\n' + cues.map((c) => `${fmtTime(c.start, '.')} --> ${fmtTime(c.end, '.')}\n${cueBody(c.text)}\n`).join('\n');
 }
 function toTXT(cues) {
   return cues.map((c) => c.text.replace(/\n/g, ' ')).join('\n') + '\n';
@@ -1230,6 +1242,7 @@ function openFile(f) {
   if (/\.(srt|vtt)$/i.test(f.name)) { importSubs(f); return; }
   if (!isMedia(f)) { toast('Please choose a video or audio file.'); return; }
   if (busy) cancelGen();
+  const carry = !file && cues.length ? cues : null; // lines opened from a subtitle file before any video
   file = f;
   if (fileUrl) URL.revokeObjectURL(fileUrl);
   fileUrl = URL.createObjectURL(f);
@@ -1243,6 +1256,8 @@ function openFile(f) {
     if (saved && Array.isArray(saved.names)) spkNames = saved.names.map(String);
     if (saved && Array.isArray(saved.cues) && saved.cues.length) { cues = tidy(saved.cues); toast('Your subtitle lines for this file were restored from last time.'); }
   } catch (_) {}
+  if (!cues.length && carry) { cues = carry; autosave(); }
+  $('genHint').textContent = '';
   renderList(); renderCap(); updateButtons(); updateGenUI();
 }
 async function importSubs(f) {
@@ -1397,7 +1412,7 @@ function updateGenUI() {
   let hint = `The AI is downloaded once and then works offline. Your video stays on this computer.`;
   if (file && d && d > FREE_MINUTES * 60 && !pro) hint = `Free version: subtitles for the first ${FREE_MINUTES} minutes of each video (this one is ${fmtClock(d)}). ` + hint;
   if (opts.lang !== 'en' && (opts.model === 'fast' || opts.model === 'accurate')) hint = `Tip: ${MODELS[opts.model].name} quality is made for English. For ${opts.lang ? (LANGS.find((l) => l[0] === opts.lang) || ['', 'other languages'])[1] : 'other languages'}, choose “${MODELS.turbo.name.split(' (')[0]}” or “${MODELS.best.name}” – far fewer mistakes. ` + hint;
-  if (!busy && !$('genHint').querySelector('a')) $('genHint').textContent = hint;
+  if (!busy && (pro || !$('genHint').querySelector('a'))) $('genHint').textContent = hint;
   updateButtons();
 }
 function renderAll() { updateGenUI(); }
@@ -1708,7 +1723,8 @@ async function planCut() {
     const cuts = findPauses(samples, { minGap: Number($('cutGap').value) });
     const saved = cuts.reduce((n, c) => n + c.end - c.start, 0);
     cutPlan = { cuts, keep: keepParts(video.duration && isFinite(video.duration) ? video.duration : dur, cuts), dur, saved };
-    $('cutInfo').textContent = cuts.length ? `${cuts.length} pause${cuts.length > 1 ? 's' : ''} found – ${fmtClock(saved)} shorter. The new video is ${fmtClock(dur - saved)} instead of ${fmtClock(dur)}.` : 'No long pauses were found. Try a shorter pause length.';
+    if (!cutPlan.keep.length) { $('cutInfo').textContent = 'This file is silent from start to end – there is nothing to keep.'; $('cutText').textContent = ''; $('cutStart').disabled = true; return; }
+    $('cutInfo').textContent = cuts.length ?`${cuts.length} pause${cuts.length > 1 ? 's' : ''} found – ${fmtClock(saved)} shorter. The new video is ${fmtClock(dur - saved)} instead of ${fmtClock(dur)}.` : 'No long pauses were found. Try a shorter pause length.';
     $('cutText').textContent = cuts.length ? 'Saving plays the video once with the pauses skipped, so it takes about as long as the new video.' : '';
     $('cutStart').disabled = !cuts.length;
   } catch (e) { $('cutText').textContent = 'The sound could not be read: ' + e.message; }

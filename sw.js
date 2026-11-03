@@ -1,6 +1,6 @@
-const CACHE = 'captionpress-v10';
+const CACHE = 'captionpress-v11';
 const RUNTIME = 'captionpress-lib-v1';
-const ASSETS = ['./', 'index.html', 'help.html', 'style.css', 'app.js', 'worker.js', 'tts-worker.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
+const ASSETS = ['./', 'index.html', 'help.html', 'style.css', 'app.js', 'worker.js', 'tts-worker.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
@@ -8,7 +8,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) =>
-    Promise.all(keys.filter((k) => k !== CACHE && k !== RUNTIME && k.startsWith('captionpress')).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+    Promise.all(keys.filter((k) => k !== CACHE && k !== RUNTIME && k !== 'captionpress-voices' && k.startsWith('captionpress')).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', (e) => {
