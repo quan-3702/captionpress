@@ -93,8 +93,23 @@
             <label id="stKOffRow" class="field">Karaoke timing <span id="stKOffVal" class="muted"></span><input id="stKOff" type="range" min="-0.5" max="0.5" step="0.05" title="Move the word highlight later (right) or earlier (left)"></label>
             <label class="check"><input id="stUpper" type="checkbox"> CAPITAL LETTERS</label>
             <label id="stLeadRow" class="check"><input id="stLead" type="checkbox"> Lead-in dots after a break</label>
-            <label id="stLeadGapRow" class="field">Break that gets lead-in dots<select id="stLeadGap"><option value="3">3 seconds or more</option><option value="4">4 seconds or more</option><option value="5">5 seconds or more (default)</option><option value="6">6 seconds or more</option><option value="8">8 seconds or more</option><option value="10">10 seconds or more</option></select></label>
+            <label id="stLeadGapRow" class="field">Break that gets lead-in dots<select id="stLeadGap"><option value="3">3 seconds or more</option><option value="4">4 seconds or more</option><option value="5">5 seconds or more</option><option value="6">6 seconds or more</option><option value="8">8 seconds or more (default)</option><option value="10">10 seconds or more</option><option value="12">12 seconds or more</option><option value="15">15 seconds or more</option></select></label>
             <button id="stCentre" type="button" class="ghost small st-centre">⌖ Centre position</button>
+          </div>
+          <div id="stK2Rows" class="k2-rows" hidden>
+            <div class="k2-row"><b>Upper line</b>
+              <label class="field">Left / right<input id="stK2uX" type="range" min="-45" max="45" step="1"></label>
+              <label class="field">Up / down<input id="stK2uY" type="range" min="-45" max="45" step="1"></label>
+              <label class="field"><span>Size <span id="stK2uSizeVal" class="muted"></span></span><input id="stK2uSize" type="range" min="50" max="200" step="5"></label>
+              <label class="field"><span>Width <span id="stK2uWideVal" class="muted"></span></span><input id="stK2uWide" type="range" min="50" max="200" step="5"></label>
+            </div>
+            <div class="k2-row"><b>Lower line</b>
+              <label class="field">Left / right<input id="stK2lX" type="range" min="-45" max="45" step="1"></label>
+              <label class="field">Up / down<input id="stK2lY" type="range" min="-45" max="45" step="1"></label>
+              <label class="field"><span>Size <span id="stK2lSizeVal" class="muted"></span></span><input id="stK2lSize" type="range" min="50" max="200" step="5"></label>
+              <label class="field"><span>Width <span id="stK2lWideVal" class="muted"></span></span><input id="stK2lWide" type="range" min="50" max="200" step="5"></label>
+            </div>
+            <button id="stK2Reset" type="button" class="ghost small">↺ Reset both lines</button>
           </div>
           <p id="stProNote" class="hint pro-note" hidden>★ You are trying <b>Karaoke – 2 lines</b>: the preview shows a PREVIEW mark. Pro removes it and saves the karaoke video.</p>
           <p class="hint">Used for the preview and for videos saved with captions burned in (Pro) – word animations included, ready for TikTok, Reels and Shorts. Drag the caption on the video to move it. SRT and VTT files keep only the words and times.</p>
@@ -130,7 +145,7 @@
           <summary>📄 I have the lyrics or script <span class="muted">(optional)</span></summary>
           <p class="hint">Paste the exact words, one subtitle per line – or open a .txt file. CaptionPress keeps your words exactly as written and only works out when each line is sung or spoken. For songs, write out every repeated chorus.</p>
           <textarea id="lyricsIn" rows="6" spellcheck="false" placeholder="Paste lyrics or a script here…&#10;One line = one subtitle"></textarea>
-          <div class="lyrics-row"><button id="lyricsOpen" class="ghost small">📂 Open .txt file…</button><button id="lyricsClear" class="ghost small">Clear</button><span id="lyricsInfo" class="hint"></span></div>
+          <div class="lyrics-row"><button id="lyricsOpen" class="ghost small">📂 Open .txt file…</button><button id="lyricsClear" class="ghost small">Clear</button><button id="tapOpen2" class="ghost small" title="Time every line exactly by pressing Space while it is sung">🎵 Tap timing…</button><span id="lyricsInfo" class="hint"></span></div>
         </details>
         <button id="genBtn" class="primary big wide" disabled>✨ Create subtitles</button>
         <p id="genHint" class="hint"></p>
@@ -185,7 +200,16 @@
           <button id="findBtn" class="ghost small" title="Find and replace (Ctrl+H)">🔎</button>
           <button id="shiftBtn" class="ghost small" title="Move all times earlier or later">⇄ Timing</button>
           <button id="fillerBtn" class="ghost small" title="Remove um, uh and other filler words from the subtitles" disabled>✂ Ums</button>
+          <button id="tapOpen" class="ghost small" title="Tap timing: press and hold Space while each line is sung">🎵 Tap timing</button>
         </div>
+      </div>
+      <div id="nudgeBar" class="nudge-bar" hidden>
+        <span class="nudge-line">Line <b id="nudgeNum"></b></span>
+        <span class="nudge-grp">Start <button data-n="start:-0.1" class="ghost small" title="Start 0.1 s earlier (Alt+[)">−0.1</button><button data-n="start:-0.05" class="ghost small" title="Start 0.05 s earlier ([)">−0.05</button><button data-n="start:0.05" class="ghost small" title="Start 0.05 s later (])">+0.05</button><button data-n="start:0.1" class="ghost small" title="Start 0.1 s later (Alt+])">+0.1</button></span>
+        <span class="nudge-grp">End <button data-n="end:-0.1" class="ghost small" title="End 0.1 s earlier (Alt+Shift+[)">−0.1</button><button data-n="end:-0.05" class="ghost small" title="End 0.05 s earlier (Shift+[)">−0.05</button><button data-n="end:0.05" class="ghost small" title="End 0.05 s later (Shift+])">+0.05</button><button data-n="end:0.1" class="ghost small" title="End 0.1 s later (Alt+Shift+])">+0.1</button></span>
+        <label class="check small-check"><input id="nudgeFollow" type="checkbox"> Move the lines after it too</label>
+        <label class="check small-check"><input id="nudgePlay" type="checkbox" checked> Play the line after each change</label>
+        <button id="nudgePlayBtn" class="ghost small" title="Play this line">▶ Play line</button>
       </div>
       <div id="findBar" class="find-bar" hidden>
         <input id="findIn" type="search" placeholder="Find">
@@ -284,6 +308,30 @@
     <div id="fontList" class="font-list"></div>
     <div class="font-type"><input id="fontName" type="text" placeholder="…or type a font name, e.g. UVN Van" aria-label="Font name"><button id="fontTry" class="ghost small">Use this font</button></div>
     <div class="row-btns"><button id="fontClose" class="ghost">Close</button></div>
+  </dialog>
+
+  <dialog id="tapDialog" class="dlg tap-dlg">
+    <h2>🎵 Tap timing</h2>
+    <div id="tapSetup">
+      <p class="hint">The song plays and you mark every line yourself – exact, the way Sayatoo does it. <b>Hold Space</b> (or the big button) while a line is sung: press when it starts, let go when it ends. <b>Backspace</b> or <b>←</b> goes back one line to redo it, <b>Esc</b> stops. A slower speed makes it easier.</p>
+      <div class="two">
+        <label class="field">Lines<select id="tapSrc"></select></label>
+        <label class="field">How to tap<select id="tapMode"><option value="hold">Hold Space while each line is sung</option><option value="tap">Tap once when each line starts</option><option value="word">Tap every word (exact word highlight)</option></select></label>
+        <label class="field">Speed<select id="tapSpeed"><option value="0.5">0.5× – slow</option><option value="0.75">0.75×</option><option value="1" selected>1× – normal</option></select></label>
+        <label class="field">Start at line<select id="tapFrom"></select></label>
+      </div>
+    </div>
+    <div class="tap-stage">
+      <div id="tapCur" class="tap-cur"></div>
+      <div id="tapNext" class="tap-next"></div>
+      <div id="tapInfo" class="hint tap-info"></div>
+    </div>
+    <button id="tapPad" class="primary tap-pad" hidden>Hold here (or Space) while the line is sung</button>
+    <div class="row-btns">
+      <button id="tapStart" class="primary">▶ Start</button>
+      <button id="tapBack" class="ghost" hidden>⟲ Back one line</button>
+      <button id="tapStop" class="ghost">Close</button>
+    </div>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
