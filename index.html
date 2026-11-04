@@ -79,7 +79,8 @@
           <div class="style-grid">
             <label class="field">Animation<select id="stAnim"><option value="none">None – whole line</option><option value="highlight">Highlight each word</option><option value="fill">Karaoke – fill as spoken</option><option value="karaoke2">Karaoke – 2 lines (lyrics videos)</option><option value="pop">Pop-up words (TikTok)</option></select></label>
             <label id="stHlRow" class="field"><span id="stHlLbl">Highlight colour</span><input id="stHl" type="color"></label>
-            <label class="field">Text size<input id="stSize" type="range" min="3" max="12" step="0.5"></label>
+            <label class="field"><span>Text size <span id="stSizeVal" class="muted"></span></span><input id="stSize" type="range" min="3" max="12" step="0.5"></label>
+            <label id="stAlignRow" class="field">Line on screen<select id="stAlign"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
             <label class="field">Position<select id="stPos"><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select></label>
             <label class="field"><span id="stColorLbl">Text colour</span><input id="stColor" type="color"></label>
             <label class="field">Background<select id="stBg"><option value="box">Dark box</option><option value="shadow">Outline only</option><option value="none">None</option></select></label>
@@ -88,28 +89,30 @@
             <div class="field">Font<button id="stFamily" type="button" class="ghost font-pick" title="Choose any font installed on this PC">Segoe UI (default)</button></div>
             <label class="field">Weight<select id="stFont"><option value="normal">Normal</option><option value="heavy">Extra bold</option></select></label>
             <label class="field">Letters per line<select id="stChars"><option value="32">32 – phone / vertical</option><option value="42">42 – standard</option><option value="56">56 – wide</option></select></label>
-            <label class="field">Move left / right<input id="stDx" type="range" min="-45" max="45" step="1"></label>
-            <label class="field">Move up / down<input id="stDy" type="range" min="-90" max="90" step="1"></label>
+            <label class="field"><span>Move left / right <span id="stDxVal" class="muted"></span></span><input id="stDx" type="range" min="-45" max="45" step="1"></label>
+            <label class="field"><span>Move up / down <span id="stDyVal" class="muted"></span></span><input id="stDy" type="range" min="-90" max="90" step="1"></label>
             <label id="stKOffRow" class="field">Karaoke timing <span id="stKOffVal" class="muted"></span><input id="stKOff" type="range" min="-0.5" max="0.5" step="0.05" title="Move the word highlight later (right) or earlier (left)"></label>
             <label class="check"><input id="stUpper" type="checkbox"> CAPITAL LETTERS</label>
             <label id="stLeadRow" class="check"><input id="stLead" type="checkbox"> Lead-in dots after a break</label>
             <label id="stLeadGapRow" class="field">Break that gets lead-in dots<select id="stLeadGap"><option value="3">3 seconds or more</option><option value="4">4 seconds or more</option><option value="5">5 seconds or more</option><option value="6">6 seconds or more</option><option value="8">8 seconds or more (default)</option><option value="10">10 seconds or more</option><option value="12">12 seconds or more</option><option value="15">15 seconds or more</option></select></label>
-            <button id="stCentre" type="button" class="ghost small st-centre">⌖ Centre position</button>
+            <button id="stCentre" type="button" class="ghost small st-centre" title="Size, position and line alignment back to the default">↺ Reset to default</button>
           </div>
           <div id="stK2Rows" class="k2-rows" hidden>
             <div class="k2-row"><b>Upper line</b>
-              <label class="field">Left / right<input id="stK2uX" type="range" min="-45" max="45" step="1"></label>
-              <label class="field">Up / down<input id="stK2uY" type="range" min="-45" max="45" step="1"></label>
+              <label class="field k2-align">Line on screen<select id="stK2uAlign"><option value="left">Left (default)</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+              <label class="field"><span>Left / right <span id="stK2uXVal" class="muted"></span></span><input id="stK2uX" type="range" min="-45" max="45" step="1"></label>
+              <label class="field"><span>Up / down <span id="stK2uYVal" class="muted"></span></span><input id="stK2uY" type="range" min="-45" max="45" step="1"></label>
               <label class="field"><span>Size <span id="stK2uSizeVal" class="muted"></span></span><input id="stK2uSize" type="range" min="50" max="200" step="5"></label>
               <label class="field"><span>Width <span id="stK2uWideVal" class="muted"></span></span><input id="stK2uWide" type="range" min="50" max="200" step="5"></label>
             </div>
             <div class="k2-row"><b>Lower line</b>
-              <label class="field">Left / right<input id="stK2lX" type="range" min="-45" max="45" step="1"></label>
-              <label class="field">Up / down<input id="stK2lY" type="range" min="-45" max="45" step="1"></label>
+              <label class="field k2-align">Line on screen<select id="stK2lAlign"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right (default)</option></select></label>
+              <label class="field"><span>Left / right <span id="stK2lXVal" class="muted"></span></span><input id="stK2lX" type="range" min="-45" max="45" step="1"></label>
+              <label class="field"><span>Up / down <span id="stK2lYVal" class="muted"></span></span><input id="stK2lY" type="range" min="-45" max="45" step="1"></label>
               <label class="field"><span>Size <span id="stK2lSizeVal" class="muted"></span></span><input id="stK2lSize" type="range" min="50" max="200" step="5"></label>
               <label class="field"><span>Width <span id="stK2lWideVal" class="muted"></span></span><input id="stK2lWide" type="range" min="50" max="200" step="5"></label>
             </div>
-            <button id="stK2Reset" type="button" class="ghost small">↺ Reset both lines</button>
+            <button id="stK2Reset" type="button" class="ghost small" title="Position, size, width and alignment of both lines back to the default">↺ Reset to default</button>
           </div>
           <p id="stProNote" class="hint pro-note" hidden>★ You are trying <b>Karaoke – 2 lines</b>: the preview shows a PREVIEW mark. Pro removes it and saves the karaoke video.</p>
           <p class="hint">Used for the preview and for videos saved with captions burned in (Pro) – word animations included, ready for TikTok, Reels and Shorts. Drag the caption on the video to move it. SRT and VTT files keep only the words and times.</p>

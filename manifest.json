@@ -7,13 +7,74 @@
   "display": "standalone",
   "background_color": "#0f766e",
   "theme_color": "#0f766e",
-  "categories": ["productivity", "multimedia", "utilities"],
+  "categories": [
+    "productivity",
+    "multimedia",
+    "utilities"
+  ],
   "file_handlers": [
-    { "action": "./", "accept": { "video/*": [".mp4", ".mov", ".mkv", ".webm", ".m4v"], "audio/*": [".mp3", ".m4a", ".wav"], "application/x-subrip": [".srt"], "text/vtt": [".vtt"] } }
+    {
+      "action": "./",
+      "accept": {
+        "video/*": [
+          ".mp4",
+          ".mov",
+          ".mkv",
+          ".webm",
+          ".m4v"
+        ],
+        "audio/*": [
+          ".mp3",
+          ".m4a",
+          ".wav"
+        ],
+        "application/x-subrip": [
+          ".srt"
+        ],
+        "text/vtt": [
+          ".vtt"
+        ]
+      }
+    },
+    {
+      "action": "./",
+      "name": "CaptionPress project",
+      "accept": {
+        "application/x-captionpress-project": [
+          ".cpproj"
+        ]
+      },
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        },
+        {
+          "src": "icon-512.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ],
+      "launch_type": "single-client"
+    }
   ],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

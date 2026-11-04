@@ -250,3 +250,5 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .small-check input { width: 14px; height: 14px; }
 .cue.sel { border-color: var(--accent); }
 .right > .nudge-bar { flex: none; }
+.k2-align { grid-column: 1 / -1; }
+.player .frame { flex-shrink: 0; } /* the picture never collapses when the Caption look panel is tall */
