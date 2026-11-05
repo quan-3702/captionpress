@@ -252,3 +252,12 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .right > .nudge-bar { flex: none; }
 .k2-align { grid-column: 1 / -1; }
 .player .frame { flex-shrink: 0; } /* the picture never collapses when the Caption look panel is tall */
+.bg-btns { display: flex; gap: 4px; }
+#nudgeSing { width: auto; padding: 2px 6px; font-size: 12px; }
+.frame { background-color: var(--frame-bg, #000); background-size: cover; background-position: center; }
+/* narrow window: the whole page scrolls, so a tall Caption look panel never squeezes the subtitle list away */
+@media (max-width: 980px) {
+  .layout { display: flex; flex-direction: column; overflow-y: auto; }
+  .layout > .left { flex: none; overflow: visible; }
+  .layout > .right { flex: none; overflow: visible; min-height: 70vh; }
+}

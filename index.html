@@ -46,6 +46,7 @@
     <input id="fileIn" type="file" accept="video/*,audio/*,.mkv,.mov,.m4a,.mp3,.wav" hidden>
     <input id="subIn" type="file" accept=".srt,.vtt,text/vtt" hidden>
     <input id="projIn" type="file" accept=".cpproj,application/json" hidden>
+    <input id="bgIn" type="file" accept="image/*" hidden>
   </header>
 
   <main class="layout">
@@ -89,34 +90,63 @@
             <div class="field">Font<button id="stFamily" type="button" class="ghost font-pick" title="Choose any font installed on this PC">Segoe UI (default)</button></div>
             <label class="field">Weight<select id="stFont"><option value="normal">Normal</option><option value="heavy">Extra bold</option></select></label>
             <label class="field">Letters per line<select id="stChars"><option value="32">32 – phone / vertical</option><option value="42">42 – standard</option><option value="56">56 – wide</option></select></label>
-            <label class="field"><span>Move left / right <span id="stDxVal" class="muted"></span></span><input id="stDx" type="range" min="-45" max="45" step="1"></label>
-            <label class="field"><span>Move up / down <span id="stDyVal" class="muted"></span></span><input id="stDy" type="range" min="-90" max="90" step="1"></label>
+            <label class="field"><span>Move left / right <span id="stDxVal" class="muted"></span></span><input id="stDx" type="range" min="-45" max="45" step="0.45"></label>
+            <label class="field"><span>Move up / down <span id="stDyVal" class="muted"></span></span><input id="stDy" type="range" min="-90" max="90" step="0.9"></label>
             <label id="stKOffRow" class="field">Karaoke timing <span id="stKOffVal" class="muted"></span><input id="stKOff" type="range" min="-0.5" max="0.5" step="0.05" title="Move the word highlight later (right) or earlier (left)"></label>
             <label class="check"><input id="stUpper" type="checkbox"> CAPITAL LETTERS</label>
             <label id="stEaseRow" class="field">Colour fill<select id="stEase"><option value="linear">Even (default)</option><option value="smooth">Smooth – soft start and end of each word</option></select></label>
-            <label id="stLeadRow" class="check"><input id="stLead" type="checkbox"> Lead-in dots after a break</label>
-            <label id="stLeadGapRow" class="field">Break that gets lead-in dots<select id="stLeadGap"><option value="3">3 seconds or more</option><option value="4">4 seconds or more</option><option value="5">5 seconds or more</option><option value="6">6 seconds or more</option><option value="8">8 seconds or more (default)</option><option value="10">10 seconds or more</option><option value="12">12 seconds or more</option><option value="15">15 seconds or more</option></select></label>
+            <label id="stLeadRow" class="check"><input id="stLead" type="checkbox"> Signals before a line after a break</label>
+            <label id="stSigRow" class="field">Signal shape<select id="stSig"><option value="dot">● Dots</option><option value="note">♪ Music notes</option><option value="tri">▶ Triangles</option><option value="sq">■ Squares</option></select></label>
+            <label id="stLeadGapRow" class="field">Break that gets signals<select id="stLeadGap"><option value="3">3 seconds or more</option><option value="4">4 seconds or more</option><option value="5">5 seconds or more</option><option value="6">6 seconds or more</option><option value="8">8 seconds or more (default)</option><option value="10">10 seconds or more</option><option value="12">12 seconds or more</option><option value="15">15 seconds or more</option></select></label>
             <button id="stCentre" type="button" class="ghost small st-centre" title="Size, position and line alignment back to the default">↺ Reset to default</button>
           </div>
           <div id="stK2Rows" class="k2-rows" hidden>
             <div class="k2-row"><b>Upper line</b>
               <label class="field k2-align">Line on screen<select id="stK2uAlign"><option value="left">Left (default)</option><option value="center">Centre</option><option value="right">Right</option></select></label>
-              <label class="field"><span>Left / right <span id="stK2uXVal" class="muted"></span></span><input id="stK2uX" type="range" min="-45" max="45" step="1"></label>
-              <label class="field"><span>Up / down <span id="stK2uYVal" class="muted"></span></span><input id="stK2uY" type="range" min="-45" max="45" step="1"></label>
+              <label class="field"><span>Left / right <span id="stK2uXVal" class="muted"></span></span><input id="stK2uX" type="range" min="-45" max="45" step="0.45"></label>
+              <label class="field"><span>Up / down <span id="stK2uYVal" class="muted"></span></span><input id="stK2uY" type="range" min="-45" max="45" step="0.45"></label>
               <label class="field"><span>Size <span id="stK2uSizeVal" class="muted"></span></span><input id="stK2uSize" type="range" min="50" max="200" step="5"></label>
               <label class="field"><span>Width <span id="stK2uWideVal" class="muted"></span></span><input id="stK2uWide" type="range" min="50" max="200" step="5"></label>
             </div>
             <div class="k2-row"><b>Lower line</b>
               <label class="field k2-align">Line on screen<select id="stK2lAlign"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right (default)</option></select></label>
-              <label class="field"><span>Left / right <span id="stK2lXVal" class="muted"></span></span><input id="stK2lX" type="range" min="-45" max="45" step="1"></label>
-              <label class="field"><span>Up / down <span id="stK2lYVal" class="muted"></span></span><input id="stK2lY" type="range" min="-45" max="45" step="1"></label>
+              <label class="field"><span>Left / right <span id="stK2lXVal" class="muted"></span></span><input id="stK2lX" type="range" min="-45" max="45" step="0.45"></label>
+              <label class="field"><span>Up / down <span id="stK2lYVal" class="muted"></span></span><input id="stK2lY" type="range" min="-45" max="45" step="0.45"></label>
               <label class="field"><span>Size <span id="stK2lSizeVal" class="muted"></span></span><input id="stK2lSize" type="range" min="50" max="200" step="5"></label>
               <label class="field"><span>Width <span id="stK2lWideVal" class="muted"></span></span><input id="stK2lWide" type="range" min="50" max="200" step="5"></label>
             </div>
             <button id="stK2Reset" type="button" class="ghost small" title="Position, size, width and alignment of both lines back to the default">↺ Reset to default</button>
           </div>
-          <p id="stProNote" class="hint pro-note" hidden>★ You are trying <b>Karaoke – 2 lines</b>: the preview shows a PREVIEW mark. Pro removes it and saves the karaoke video.</p>
+          <p id="stProNote" class="hint pro-note" hidden>★ You are trying a Pro look (Karaoke – 2 lines or an effect): the preview shows a PREVIEW mark. Pro removes it and saves the video.</p>
           <p class="hint">Used for the preview and for videos saved with captions burned in (Pro) – word animations included, ready for TikTok, Reels and Shorts. Drag the caption on the video to move it. SRT and VTT files keep only the words and times.</p>
+        </details>
+        <details id="fxBox" class="style-box">
+          <summary>✨ Effects, title &amp; video shape <span class="badge pro-only">PRO</span></summary>
+          <div class="style-grid">
+            <label class="field">Line effect<select id="stFx"><option value="none">None</option><option value="fade">Fade in and out</option><option value="zoom">Zoom in</option><option value="slide">Slide up</option></select></label>
+            <label class="field"><span>Glow <span id="stGlowVal" class="muted"></span></span><input id="stGlow" type="range" min="0" max="100" step="5"></label>
+            <label class="field"><span>Outline thickness <span id="stOlwVal" class="muted"></span></span><input id="stOlw" type="range" min="0" max="300" step="10"></label>
+            <label class="check"><input id="stGrad" type="checkbox"> Two-colour fill</label>
+            <label id="stHl2Row" class="field">Second fill colour<input id="stHl2" type="color"></label>
+            <label class="field">Singer A colour<input id="stDuetA" type="color"></label>
+            <label class="field">Singer B colour<input id="stDuetB" type="color"></label>
+            <label class="field">Both together<input id="stDuetAB" type="color"></label>
+          </div>
+          <p class="hint">Duet: click a line, then choose who sings it in the bar above the lines (Singer A / B / Both) – its sung colour changes.</p>
+          <div class="style-grid">
+            <label class="check"><input id="stTitleOn" type="checkbox"> Title card at the start</label>
+            <label class="field">Song title<input id="stTitleText" type="text" maxlength="120" placeholder="Song title"></label>
+            <label class="field">Singer<input id="stTitleBy" type="text" maxlength="120" placeholder="Singer"></label>
+            <label class="field">Music &amp; lyrics<input id="stTitleMusic" type="text" maxlength="120" placeholder="Composer"></label>
+            <label class="field">Shown for<select id="stTitleSecs"><option value="3">3 seconds</option><option value="5">5 seconds</option><option value="8">8 seconds</option></select></label>
+          </div>
+          <div class="style-grid">
+            <label class="field">Video shape<select id="stOut"><option value="source">Same as the video</option><option value="169">1080p 16:9 – YouTube</option><option value="916">1080×1920 9:16 – TikTok, Reels, Shorts</option><option value="11">1080×1080 1:1 – square</option></select></label>
+            <label class="field">Background colour<input id="stBgColor" type="color"></label>
+            <div class="field">Background picture<span class="bg-btns"><button id="bgPick" type="button" class="ghost small">🖼 Choose…</button><button id="bgClear" type="button" class="ghost small" hidden>✕</button></span></div>
+            <label class="field"><span>Darken picture <span id="stBgDimVal" class="muted"></span></span><input id="stBgDim" type="range" min="0" max="80" step="5"></label>
+          </div>
+          <p class="hint">The background fills the space around the video (a different shape) and the whole picture for songs without video (MP3 + picture → video). The preview shows exactly what the saved video looks like. Saving a video with these effects is part of Pro; free users can try them here (with a PREVIEW mark).</p>
         </details>
         <details id="voiceBox" class="style-box">
           <summary>🎙 AI voice-over <span class="badge pro-only">PRO</span></summary>
@@ -214,6 +244,7 @@
         <label class="check small-check"><input id="nudgeFollow" type="checkbox"> Move the lines after it too</label>
         <label class="check small-check"><input id="nudgePlay" type="checkbox" checked> Play the line after each change</label>
         <button id="nudgePlayBtn" class="ghost small" title="Play this line">▶ Play line</button>
+        <label class="inline small-check">Who sings<select id="nudgeSing"><option value="">–</option><option value="a">Singer A</option><option value="b">Singer B</option><option value="ab">Both</option></select></label>
       </div>
       <div id="findBar" class="find-bar" hidden>
         <input id="findIn" type="search" placeholder="Find">
