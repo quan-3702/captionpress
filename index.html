@@ -50,6 +50,60 @@
     <input id="bgIn" type="file" accept="image/*" hidden>
   </header>
 
+  <nav id="menubar" class="menubar" aria-label="Menu">
+    <div class="mb-item"><button class="mb-top" data-m="file">File</button>
+      <div class="mb-menu" data-m="file" hidden>
+        <button data-c="fileIn">📂 Open video or audio… <small>Ctrl+O</small></button>
+        <button data-c="projOpenBtn">📂 Open project…</button>
+        <button data-c="projSaveBtn">💾 Save project <small>Ctrl+S</small></button>
+        <button data-c="importBtn">Open a subtitle file (.srt / .vtt)…</button>
+        <hr>
+        <button data-x="srt" data-need="exportBtn">Save subtitles – SubRip (.srt)</button>
+        <button data-x="vtt" data-need="exportBtn">Save subtitles – Web (.vtt)</button>
+        <button data-x="txt" data-need="exportBtn">Save transcript (.txt)</button>
+        <button data-x="txts" data-need="exportBtn">Save transcript with times (.txt)</button>
+        <button data-x="docx" data-need="exportBtn">📄 Save meeting minutes (.docx) <span class="badge pro-only">PRO</span></button>
+        <button data-x="burn" data-need="exportBtn">🎬 Save video with captions <span class="badge pro-only">PRO</span></button>
+        <button data-x="cut" data-need="exportBtn">✂ Save shorter video <span class="badge pro-only">PRO</span></button>
+        <button data-x="voicevideo" data-need="exportBtn">🎙 Save video with AI voice-over <span class="badge pro-only">PRO</span></button>
+        <button data-x="voicewav" data-need="exportBtn">🎙 Save AI voice-over (.wav) <span class="badge pro-only">PRO</span></button>
+        <hr>
+        <button data-c="recBtn">🎙 Record a meeting…</button>
+      </div>
+    </div>
+    <div class="mb-item"><button class="mb-top" data-m="edit">Edit</button>
+      <div class="mb-menu" data-m="edit" hidden>
+        <button data-c="undoBtn">↶ Undo <small>Ctrl+Z</small></button>
+        <button data-c="redoBtn">↷ Redo <small>Ctrl+Y</small></button>
+        <hr>
+        <button data-c="addBtn">＋ Add a line at the current time</button>
+        <button data-c="findBtn">🔎 Find and replace <small>Ctrl+H</small></button>
+        <button data-c="shiftBtn">⇄ Move all times earlier or later</button>
+        <button data-c="fillerBtn">✂ Remove um, uh…</button>
+        <button data-c="tapOpen">🎵 Tap timing…</button>
+        <button data-c="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
+        <hr>
+        <button data-c="clearBtn" class="danger">Remove all subtitle lines…</button>
+      </div>
+    </div>
+    <div class="mb-item"><button class="mb-top" data-m="opt">Options</button>
+      <div class="mb-menu" data-m="opt" hidden>
+        <button data-o="linesLeft"><span class="mb-chk"></span> Subtitle lines on the left</button>
+        <hr>
+        <button data-d="styleBox">🎨 Caption look &amp; signals…</button>
+        <button data-d="fxBox">✨ Effects, title &amp; video shape…</button>
+        <button data-d="voiceBox">🎙 AI voice-over…</button>
+        <button data-d="trCard">🌐 Translate the subtitles…</button>
+        <button data-d="spkCard">👥 Who is speaking – meeting notes…</button>
+      </div>
+    </div>
+    <div class="mb-item"><button class="mb-top" data-m="help">Help</button>
+      <div class="mb-menu" data-m="help" hidden>
+        <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
+        <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress%20feedback">✉ Feedback &amp; support</a>
+      </div>
+    </div>
+  </nav>
   <main class="layout">
     <section class="left">
       <div id="drop" class="drop">
@@ -75,7 +129,7 @@
           <button id="fwd5" class="ghost icon" title="Forward 5 seconds">5 ⟳</button>
           <button id="markBtn" class="ghost icon" title="Mark this moment as important (M)">★ Mark</button>
         </div>
-        <details class="style-box">
+        <details id="styleBox" class="style-box">
           <summary>Caption look</summary>
           <div id="presets" class="presets"></div>
           <div class="style-grid">
@@ -98,6 +152,7 @@
             <label id="stEaseRow" class="field">Colour fill<select id="stEase"><option value="linear">Even (default)</option><option value="smooth">Smooth – soft start and end of each word</option></select></label>
             <label id="stLeadRow" class="check"><input id="stLead" type="checkbox"> Signals before a line after a break</label>
             <label id="stSigRow" class="field">Signal shape<select id="stSig"><option value="dot">● Dots</option><option value="note">♪ Music notes</option><option value="tri">▶ Triangles</option><option value="sq">■ Squares</option></select></label>
+            <label id="stSigSizeRow" class="field"><span>Signal size <span id="stSigSizeVal" class="muted"></span></span><input id="stSigSize" type="range" min="50" max="300" step="10"></label>
             <label id="stLeadGapRow" class="field">Break that gets signals<select id="stLeadGap"><option value="3">3 seconds or more</option><option value="4">4 seconds or more</option><option value="5">5 seconds or more</option><option value="6">6 seconds or more</option><option value="8">8 seconds or more (default)</option><option value="10">10 seconds or more</option><option value="12">12 seconds or more</option><option value="15">15 seconds or more</option></select></label>
             <button id="stCentre" type="button" class="ghost small st-centre" title="Size, position and line alignment back to the default">↺ Reset to default</button>
           </div>
