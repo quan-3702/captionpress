@@ -37,6 +37,7 @@
             <button data-x="cut" data-need="exportBtn">✂ Shorter video – pauses cut out <span class="badge pro-only">PRO</span></button>
             <button data-x="voicevideo" data-need="exportBtn">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
             <button data-x="voicewav" data-need="exportBtn">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
+            <button data-x="beatwav">🎵 Karaoke beat – music only (.wav) <span class="badge pro-only">PRO</span></button>
           </div>
         </div>
         <hr>
@@ -76,6 +77,7 @@
         <hr>
         <button data-d="styleBox">🎨 Caption look &amp; signals…</button>
         <button data-d="fxBox">✨ Effects, title &amp; video shape…</button>
+        <button data-d="musicBox">🎤 Beat karaoke – remove vocals, key &amp; speed…</button>
         <button data-d="voiceBox">🎙 AI voice-over…</button>
         <button data-d="trCard">🌐 Translate the subtitles…</button>
         <button data-d="spkCard">👥 Who is speaking – meeting notes…</button>
@@ -120,6 +122,7 @@
       <button data-x="cut">✂ Shorter video – long pauses cut out <span class="badge pro-only">PRO</span></button>
       <button data-x="voicevideo">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
       <button data-x="voicewav">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
+      <button data-x="beatwav">🎵 Karaoke beat – music only (.wav) <span class="badge pro-only">PRO</span></button>
     </div>
     <div id="menu" class="menu" hidden>
       <button id="recBtn">🎙 Record a meeting…</button>
@@ -235,7 +238,46 @@
             <div class="field">Background picture<span class="bg-btns"><button id="bgPick" type="button" class="ghost small">🖼 Choose…</button><button id="bgClear" type="button" class="ghost small" hidden>✕</button></span></div>
             <label class="field"><span>Darken picture <span id="stBgDimVal" class="muted"></span></span><input id="stBgDim" type="range" min="0" max="80" step="5"></label>
           </div>
+          <h3 class="sub-h">🎼 Interlude screen</h3>
+          <div class="style-grid">
+            <label class="check"><input id="stIntOn" type="checkbox"> Show it in long music breaks (no singing)</label>
+            <label class="field">Text<input id="stIntText" type="text" maxlength="60" placeholder="♪  ♪  ♪   (for example: ♪ Nhạc dạo ♪)"></label>
+          </div>
+          <p class="hint">In every break longer than the “Break that gets signals” time (8 seconds by default) the text and a bar that fills up until the singing starts again are shown in the middle of the picture.</p>
+          <h3 class="sub-h">🏷 Your logo</h3>
+          <div class="style-grid">
+            <label class="check"><input id="stLogoOn" type="checkbox"> Show my logo on the video</label>
+            <div class="field">Logo picture<span class="bg-btns"><button id="logoPick" type="button" class="ghost small">🏷 Choose…</button><button id="logoClear" type="button" class="ghost small" hidden title="Remove the logo">✕</button></span></div>
+            <label class="field">Corner<select id="stLogoPos"><option value="tl">Top left</option><option value="tr">Top right</option><option value="bl">Bottom left</option><option value="br">Bottom right</option></select></label>
+            <label class="field"><span>Size <span id="stLogoSizeVal" class="muted"></span></span><input id="stLogoSize" type="range" min="5" max="30" step="1"></label>
+            <label class="field"><span>Strength <span id="stLogoAlphaVal" class="muted"></span></span><input id="stLogoAlpha" type="range" min="20" max="100" step="5"></label>
+          </div>
+          <input id="logoIn" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+          <h3 class="sub-h">🌐 Second language line</h3>
+          <label class="check"><input id="stTrOn" type="checkbox"> Show a translation under every line</label>
+          <textarea id="trIn" class="tr-in" rows="5" spellcheck="false" placeholder="Paste the translation here – one line for each lyrics line, in the same order (a repeated chorus only once, or every time – both work)"></textarea>
+          <div class="lyrics-row"><button id="trApply" type="button" class="ghost small">✓ Use these lines</button><span id="trInfo" class="hint"></span></div>
+          <div class="style-grid">
+            <label class="field"><span>Size <span id="stTrSizeVal" class="muted"></span></span><input id="stTrSize" type="range" min="35" max="90" step="5"></label>
+            <label class="field">Colour<input id="stTrColor" type="color"></label>
+          </div>
           <p class="hint">The background fills the space around the video (a different shape) and the whole picture for songs without video (MP3 + picture → video). The preview shows exactly what the saved video looks like. Saving a video with these effects is part of Pro; free users can try them here (with a PREVIEW mark).</p>
+        </details>
+        <details id="musicBox" class="style-box">
+          <summary>🎤 Beat karaoke – remove the vocals, key &amp; speed <span class="badge pro-only">PRO</span></summary>
+          <p class="hint">The AI takes the singer’s voice out so only the music is left – a karaoke beat. You can also make the song higher or lower for your voice and faster or slower; the lyrics follow. It all happens on this computer – nothing is uploaded. The vocal remover downloads once (about 170 MB). Free: try it on the first 30 seconds.</p>
+          <div class="style-grid">
+            <label class="field"><span>Singer’s voice <span id="muVoiceVal" class="muted"></span></span><input id="muVoice" type="range" min="0" max="100" step="5"></label>
+            <label class="field">Key<select id="muKey"><option value="-6">−6 (lower)</option><option value="-5">−5</option><option value="-4">−4</option><option value="-3">−3</option><option value="-2">−2</option><option value="-1">−1</option><option value="0">0 – original key</option><option value="1">+1</option><option value="2">+2</option><option value="3">+3</option><option value="4">+4</option><option value="5">+5</option><option value="6">+6 (higher)</option></select></label>
+            <label class="field">Speed<select id="muTempo"><option value="0.8">80 % – slower</option><option value="0.85">85 %</option><option value="0.9">90 %</option><option value="0.95">95 %</option><option value="1">100 % – original</option><option value="1.05">105 %</option><option value="1.1">110 %</option><option value="1.15">115 %</option><option value="1.2">120 % – faster</option></select></label>
+          </div>
+          <div class="vc-btns">
+            <button id="muMake" class="primary">🎵 Make the beat</button>
+            <label class="check"><input id="muOn" type="checkbox" disabled> Hear the beat with the video</label>
+            <button id="muSave" class="ghost" disabled>💾 Save the beat (.wav) <span class="badge pro-only">PRO</span></button>
+          </div>
+          <div id="muProg" class="bar" hidden><i id="muBar"></i></div>
+          <p id="muStatus" class="hint"></p>
         </details>
         <details id="voiceBox" class="style-box">
           <summary>🎙 AI voice-over <span class="badge pro-only">PRO</span></summary>
@@ -355,6 +397,7 @@
     <p class="muted">CaptionPress plays your video from start to finish and records it with your captions and voice-over. This takes as long as the video itself. Keep this window open.</p>
     <label class="check"><input id="burnCaps" type="checkbox" checked> Show the captions on the video</label>
     <label id="burnVoiceRow" class="check"><input id="burnVoice" type="checkbox"> Add the AI voice-over</label>
+    <label id="burnBeatRow" class="check" hidden><input id="burnBeat" type="checkbox"> Use the beat (vocals removed / new key &amp; speed)</label>
     <div class="bar"><i id="burnBar"></i></div>
     <p id="burnText" class="hint"></p>
     <div class="row-btns">

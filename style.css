@@ -325,3 +325,5 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 #genBtn:hover:not(:disabled) { background: var(--navy-btn-h); }
 input[type=range], .transport input[type=range] { accent-color: var(--navy-slider); }
 .topbar .pro-btn.is-pro { background: var(--navy-bar-2); color: var(--navy-text); }
+.sub-h { font-size: 14px; margin: 14px 0 4px; }
+.tr-in { width: 100%; margin: 6px 0; font: inherit; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); resize: vertical; }
