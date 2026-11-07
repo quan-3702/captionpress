@@ -284,9 +284,9 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .mb-label { font-size: 12px; color: var(--muted); padding: 4px 12px 2px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 .mb-menu .sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid #8886; }
 :root[data-theme="white"] { --bg: #f3f5f4; --card: #ffffff; --text: #17201d; --muted: #5d6b66; --line: #dce3e0; --accent: #0f766e; --accent-2: #ccfbf1; --on-accent: #ffffff; --danger: #b42318; --hi: #fef3c7; color-scheme: light; }
-:root[data-theme="navy"] { --bg: #0b1730; --card: #12224a; --text: #e8eefc; --muted: #9fb0d6; --line: #253c72; --accent: #60a5fa; --accent-2: #1b3266; --on-accent: #06183a; --danger: #fca5a5; --hi: #24386e; color-scheme: dark; }
-:root[data-theme="red"] { --bg: #1f0a0d; --card: #34121a; --text: #fbecee; --muted: #d4a5ab; --line: #57212a; --accent: #f87171; --accent-2: #5a1a24; --on-accent: #2a0509; --danger: #fecaca; --hi: #5a2630; color-scheme: dark; }
-:root[data-theme="orange"] { --bg: #fff4e8; --card: #ffffff; --text: #2b1a0e; --muted: #8a6a52; --line: #fdd5ad; --accent: #ea580c; --accent-2: #ffe7cf; --on-accent: #ffffff; --danger: #b42318; --hi: #fde68a; color-scheme: light; }
+:root[data-theme="navy"] { --bg: #0b1730; --card: #12224a; --text: #e8eefc; --muted: #9fb0d6; --line: #253c72; --accent: #60a5fa; --accent-2: #1b3266; --on-accent: #06183a; --danger: #fca5a5; --hi: #24386e; --bar: #0f1d40; color-scheme: dark; }
+:root[data-theme="red"] { --bg: #1f0a0d; --card: #34121a; --text: #fbecee; --muted: #d4a5ab; --line: #57212a; --accent: #f87171; --accent-2: #5a1a24; --on-accent: #2a0509; --danger: #fecaca; --hi: #5a2630; --bar: #2a0e14; color-scheme: dark; }
+:root[data-theme="orange"] { --bg: #fff6ee; --card: #ffffff; --text: #2b1a0e; --muted: #7c5a40; --line: #fed7aa; --accent: #c2410c; --accent-2: #fed7aa; --bar: #fff0e0; --on-accent: #ffffff; --danger: #b42318; --hi: #fde68a; color-scheme: light; }
 /* v31: menu bar on top, icon toolbar below it */
 .topbar { padding: 6px 12px; gap: 10px; }
 .tools { display: flex; align-items: center; gap: 4px; }
@@ -305,8 +305,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .mb-fly button { text-align: left; background: transparent; color: var(--text); padding: 7px 12px; border-radius: 7px; font-size: 14px; border: 0; display: flex; align-items: center; gap: 6px; }
 .mb-fly button:hover:not(:disabled) { background: var(--accent-2); }
 @media (max-width: 760px) { .mb-fly { position: static; box-shadow: none; border: 0; padding-left: 14px; min-width: 0; } }
-:root[data-theme="lightblue"] { --bg: #eaf5ff; --card: #ffffff; --text: #0c2a43; --muted: #4f6b84; --line: #bfdcf5; --accent: #0369a1; --accent-2: #d6ecff; --on-accent: #ffffff; --danger: #b42318; --hi: #fef3c7; color-scheme: light; }
-:root[data-theme="green"] { --bg: #08190f; --card: #10291a; --text: #e6f6ec; --muted: #9cc5aa; --line: #1f4a2f; --accent: #4ade80; --accent-2: #173d26; --on-accent: #052e14; --danger: #fca5a5; --hi: #1f4a2f; color-scheme: dark; }
-:root[data-theme="purple"] { --bg: #160a24; --card: #241238; --text: #f1e8fb; --muted: #c0a7da; --line: #3f2560; --accent: #c084fc; --accent-2: #3a1d5a; --on-accent: #1e0638; --danger: #fca5a5; --hi: #3f2560; color-scheme: dark; }
-:root[data-theme="pink"] { --bg: #fff0f7; --card: #ffffff; --text: #3a0d22; --muted: #8c5670; --line: #f9cfe3; --accent: #db2777; --accent-2: #fde2ef; --on-accent: #ffffff; --danger: #b42318; --hi: #fef3c7; color-scheme: light; }
-:root[data-theme="black"] { --bg: #000000; --card: #111111; --text: #f2f2f2; --muted: #a3a3a3; --line: #2a2a2a; --accent: #facc15; --accent-2: #262626; --on-accent: #111111; --danger: #fca5a5; --hi: #333333; color-scheme: dark; }
+:root[data-theme="lightblue"] { --bg: #eaf5ff; --card: #ffffff; --text: #0c2a43; --muted: #4f6b84; --line: #bfdcf5; --accent: #0369a1; --accent-2: #c7e4ff; --on-accent: #ffffff; --danger: #b42318; --hi: #fef3c7; --bar: #e3f1ff; color-scheme: light; }
+:root[data-theme="green"] { --bg: #08190f; --card: #10291a; --text: #e6f6ec; --muted: #9cc5aa; --line: #1f4a2f; --accent: #4ade80; --accent-2: #173d26; --on-accent: #052e14; --danger: #fca5a5; --hi: #1f4a2f; --bar: #0c2215; color-scheme: dark; }
+:root[data-theme="purple"] { --bg: #160a24; --card: #241238; --text: #f1e8fb; --muted: #c0a7da; --line: #3f2560; --accent: #c084fc; --accent-2: #3a1d5a; --on-accent: #1e0638; --danger: #fca5a5; --hi: #3f2560; --bar: #1d0e2e; color-scheme: dark; }
+:root[data-theme="pink"] { --bg: #fff0f7; --card: #ffffff; --text: #3a0d22; --muted: #8c5670; --line: #f9cfe3; --accent: #be185d; --accent-2: #fbcfe8; --bar: #fdeef6; --on-accent: #ffffff; --danger: #b42318; --hi: #fef3c7; color-scheme: light; }
+:root[data-theme="black"] { --bg: #000000; --card: #111111; --text: #f2f2f2; --muted: #a3a3a3; --line: #2a2a2a; --accent: #facc15; --accent-2: #262626; --on-accent: #111111; --danger: #fca5a5; --hi: #333333; --bar: #0a0a0a; color-scheme: dark; }
+/* theme bars: the menu bar and the toolbar take a soft tint of the theme */
+.menubar, .topbar { background: var(--bar, var(--card)); }
