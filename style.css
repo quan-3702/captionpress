@@ -310,5 +310,18 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 :root[data-theme="purple"] { --bg: #160a24; --card: #241238; --text: #f1e8fb; --muted: #c0a7da; --line: #3f2560; --accent: #c084fc; --accent-2: #3a1d5a; --on-accent: #1e0638; --danger: #fca5a5; --hi: #3f2560; --bar: #1d0e2e; color-scheme: dark; }
 :root[data-theme="pink"] { --bg: #fff0f7; --card: #ffffff; --text: #3a0d22; --muted: #8c5670; --line: #f9cfe3; --accent: #be185d; --accent-2: #fbcfe8; --bar: #fdeef6; --on-accent: #ffffff; --danger: #b42318; --hi: #fef3c7; color-scheme: light; }
 :root[data-theme="black"] { --bg: #000000; --card: #111111; --text: #f2f2f2; --muted: #a3a3a3; --line: #2a2a2a; --accent: #facc15; --accent-2: #262626; --on-accent: #111111; --danger: #fca5a5; --hi: #333333; --bar: #0a0a0a; color-scheme: dark; }
-/* theme bars: the menu bar and the toolbar take a soft tint of the theme */
-.menubar, .topbar { background: var(--bar, var(--card)); }
+/* v34: the bars, the Create subtitles button and the sliders always use the Dark Blue look;
+   the colour theme changes only the screen below them */
+:root { --navy-bar: #12224a; --navy-bar-2: #1b3266; --navy-line: #253c72; --navy-text: #e8eefc; --navy-muted: #9fb0d6; --navy-btn: #1e40af; --navy-btn-h: #1e3a8a; --navy-slider: #3b82f6; }
+.menubar, .topbar { background: var(--navy-bar); border-bottom-color: var(--navy-line); color: var(--navy-text); }
+.mb-top { color: var(--navy-text); }
+.mb-top:hover, .mb-top.on { background: var(--navy-bar-2); }
+.tbi { color: var(--navy-text); }
+.tbi:hover:not(:disabled) { background: var(--navy-bar-2); border-color: var(--navy-line); }
+.tb-sep { background: var(--navy-line); }
+.topbar .file-name { color: var(--navy-text); }
+.menubar button:focus-visible, .topbar button:focus-visible { outline-color: var(--navy-slider); }
+#genBtn { background: var(--navy-btn); color: #ffffff; border-color: var(--navy-btn); }
+#genBtn:hover:not(:disabled) { background: var(--navy-btn-h); }
+input[type=range], .transport input[type=range] { accent-color: var(--navy-slider); }
+.topbar .pro-btn.is-pro { background: var(--navy-bar-2); color: var(--navy-text); }
