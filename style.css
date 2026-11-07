@@ -279,3 +279,11 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
   body.lines-left .layout { grid-template-columns: 460px minmax(0, 1fr); }
   body.lines-left .right { order: -1; border-left: 0; border-right: 1px solid var(--line); }
 }
+
+/* Options → Colour theme (overrides light / dark) */
+.mb-label { font-size: 12px; color: var(--muted); padding: 4px 12px 2px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.mb-menu .sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid #8886; }
+:root[data-theme="white"] { --bg: #f3f5f4; --card: #ffffff; --text: #17201d; --muted: #5d6b66; --line: #dce3e0; --accent: #0f766e; --accent-2: #ccfbf1; --on-accent: #ffffff; --danger: #b42318; --hi: #fef3c7; color-scheme: light; }
+:root[data-theme="navy"] { --bg: #0b1730; --card: #12224a; --text: #e8eefc; --muted: #9fb0d6; --line: #253c72; --accent: #60a5fa; --accent-2: #1b3266; --on-accent: #06183a; --danger: #fca5a5; --hi: #24386e; color-scheme: dark; }
+:root[data-theme="red"] { --bg: #1f0a0d; --card: #34121a; --text: #fbecee; --muted: #d4a5ab; --line: #57212a; --accent: #f87171; --accent-2: #5a1a24; --on-accent: #2a0509; --danger: #fecaca; --hi: #5a2630; color-scheme: dark; }
+:root[data-theme="orange"] { --bg: #fff4e8; --card: #ffffff; --text: #2b1a0e; --muted: #8a6a52; --line: #fdd5ad; --accent: #ea580c; --accent-2: #ffe7cf; --on-accent: #ffffff; --danger: #b42318; --hi: #fde68a; color-scheme: light; }

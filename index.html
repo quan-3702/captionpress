@@ -90,6 +90,13 @@
       <div class="mb-menu" data-m="opt" hidden>
         <button data-o="linesLeft"><span class="mb-chk"></span> Subtitle lines on the left</button>
         <hr>
+        <div class="mb-label">Colour theme</div>
+        <button data-th="auto"><span class="mb-chk"></span> Same as Windows (light / dark)</button>
+        <button data-th="white"><span class="mb-chk"></span> <i class="sw" style="background:#ffffff"></i> White</button>
+        <button data-th="navy"><span class="mb-chk"></span> <i class="sw" style="background:#12224a"></i> Dark blue</button>
+        <button data-th="red"><span class="mb-chk"></span> <i class="sw" style="background:#5a1a20"></i> Dark red</button>
+        <button data-th="orange"><span class="mb-chk"></span> <i class="sw" style="background:#ea580c"></i> Orange</button>
+        <hr>
         <button data-d="styleBox">🎨 Caption look &amp; signals…</button>
         <button data-d="fxBox">✨ Effects, title &amp; video shape…</button>
         <button data-d="voiceBox">🎙 AI voice-over…</button>
@@ -133,6 +140,7 @@
           <summary>Caption look</summary>
           <div id="presets" class="presets"></div>
           <div class="style-grid">
+            <label class="field"><span>Line transition <span class="badge pro-only">PRO</span></span><select id="stFx"><option value="none">None</option><option value="crossfade">Crossfade</option><option value="fade">Fade in and out</option><option value="roll">Roll</option><option value="twist">Twist</option><option value="zoom">Zoom</option><option value="slide">Slide up</option></select></label>
             <label class="field">Animation<select id="stAnim"><option value="none">None – whole line</option><option value="highlight">Highlight each word</option><option value="fill">Karaoke – fill as spoken</option><option value="karaoke2">Karaoke – 2 lines (lyrics videos)</option><option value="pop">Pop-up words (TikTok)</option></select></label>
             <label id="stHlRow" class="field"><span id="stHlLbl">Highlight colour</span><input id="stHl" type="color"></label>
             <label class="field"><span>Text size <span id="stSizeVal" class="muted"></span></span><input id="stSize" type="range" min="3" max="12" step="0.5"></label>
@@ -179,7 +187,6 @@
         <details id="fxBox" class="style-box">
           <summary>✨ Effects, title &amp; video shape <span class="badge pro-only">PRO</span></summary>
           <div class="style-grid">
-            <label class="field">Line effect<select id="stFx"><option value="none">None</option><option value="fade">Fade in and out</option><option value="zoom">Zoom in</option><option value="slide">Slide up</option></select></label>
             <label class="field"><span>Glow <span id="stGlowVal" class="muted"></span></span><input id="stGlow" type="range" min="0" max="100" step="5"></label>
             <label class="field"><span>Outline thickness <span id="stOlwVal" class="muted"></span></span><input id="stOlw" type="range" min="0" max="300" step="10"></label>
             <label class="check"><input id="stGrad" type="checkbox"> Two-colour fill</label>
