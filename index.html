@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CaptionPress – Auto Subtitle Generator &amp; Editor</title>
+  <title>CaptionPress - Auto Subtitle Generator &amp; Editor</title>
   <meta name="description" content="Create subtitles for any video automatically with AI that runs on your own computer. Edit the timing and text, then save SRT or VTT files or a video with captions burned in.">
   <meta name="theme-color" content="#0f766e">
   <link rel="manifest" href="manifest.json">
@@ -11,63 +11,34 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><img src="icon-192.png" alt="" width="30" height="30"><span>CaptionPress</span></div>
-    <span id="fileName" class="file-name"></span>
-    <div class="top-btns">
-      <button id="openBtn" class="tb">📂 Open video</button>
-      <button id="exportBtn" class="tb" disabled>💾 Save subtitles ▾</button>
-      <button id="moreBtn" class="tb">☰ More</button>
-      <button id="recBadge" class="rec-badge" hidden title="Recording – click to see or stop">● REC</button>
-      <button id="proBtn" class="pro-btn" hidden>★ Get Pro</button>
-    </div>
-    <div id="exportMenu" class="menu" hidden>
-      <button data-x="srt">SubRip subtitles (.srt) <small>YouTube, Premiere, VLC…</small></button>
-      <button data-x="vtt">Web subtitles (.vtt)</button>
-      <button data-x="txt">Plain text transcript (.txt)</button>
-      <button data-x="txts">Transcript with times (.txt) <small>adds who spoke, if set</small></button>
-      <button data-x="docx">📄 Meeting minutes – Word (.docx) <span class="badge pro-only">PRO</span></button>
-      <button data-x="burn">🎬 Video with captions burned in <span class="badge pro-only">PRO</span></button>
-      <button data-x="cut">✂ Shorter video – long pauses cut out <span class="badge pro-only">PRO</span></button>
-      <button data-x="voicevideo">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
-      <button data-x="voicewav">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
-    </div>
-    <div id="menu" class="menu" hidden>
-      <button id="recBtn">🎙 Record a meeting…</button>
-      <button id="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
-      <button id="projSaveBtn">💾 Save project… <small>Ctrl+S</small></button>
-      <button id="projOpenBtn">📂 Open project…</button>
-      <button id="importBtn">Open a subtitle file (.srt / .vtt)…</button>
-      <button id="clearBtn" class="danger">Remove all subtitle lines…</button>
-      <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
-      <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress%20feedback">✉ Feedback &amp; support</a>
-      <a href="https://apps.microsoft.com/detail/9PDJ7G2HRVTG" target="_blank" rel="noopener">More apps: ScreenPress – record your screen with your webcam</a>
-      <a href="https://apps.microsoft.com/detail/9NB48B109NR4" target="_blank" rel="noopener">More apps: CueScroll teleprompter</a>
-      <a href="https://apps.microsoft.com/detail/9P25KDSFDB0N" target="_blank" rel="noopener">More apps: PixelBatch image converter</a>
-    </div>
-    <input id="fileIn" type="file" accept="video/*,audio/*,.mkv,.mov,.m4a,.mp3,.wav" hidden>
-    <input id="subIn" type="file" accept=".srt,.vtt,text/vtt" hidden>
-    <input id="projIn" type="file" accept=".cpproj,application/json" hidden>
-    <input id="bgIn" type="file" accept="image/*" hidden>
-  </header>
-
   <nav id="menubar" class="menubar" aria-label="Menu">
     <div class="mb-item"><button class="mb-top" data-m="file">File</button>
       <div class="mb-menu" data-m="file" hidden>
         <button data-c="fileIn">📂 Open video or audio… <small>Ctrl+O</small></button>
         <button data-c="projOpenBtn">📂 Open project…</button>
         <button data-c="projSaveBtn">💾 Save project <small>Ctrl+S</small></button>
-        <button data-c="importBtn">Open a subtitle file (.srt / .vtt)…</button>
         <hr>
-        <button data-x="srt" data-need="exportBtn">Save subtitles – SubRip (.srt)</button>
-        <button data-x="vtt" data-need="exportBtn">Save subtitles – Web (.vtt)</button>
-        <button data-x="txt" data-need="exportBtn">Save transcript (.txt)</button>
-        <button data-x="txts" data-need="exportBtn">Save transcript with times (.txt)</button>
-        <button data-x="docx" data-need="exportBtn">📄 Save meeting minutes (.docx) <span class="badge pro-only">PRO</span></button>
-        <button data-x="burn" data-need="exportBtn">🎬 Save video with captions <span class="badge pro-only">PRO</span></button>
-        <button data-x="cut" data-need="exportBtn">✂ Save shorter video <span class="badge pro-only">PRO</span></button>
-        <button data-x="voicevideo" data-need="exportBtn">🎙 Save video with AI voice-over <span class="badge pro-only">PRO</span></button>
-        <button data-x="voicewav" data-need="exportBtn">🎙 Save AI voice-over (.wav) <span class="badge pro-only">PRO</span></button>
+        <div class="mb-sub"><button class="mb-subtop">📥 Import <small>▸</small></button>
+          <div class="mb-fly">
+            <button data-c="importBtn">Subtitle file (.srt / .vtt)…</button>
+            <button data-c="lyricsOpen">Lyrics or script (.txt)…</button>
+          </div>
+        </div>
+        <div class="mb-sub"><button class="mb-subtop">📤 Export <small>▸</small></button>
+          <div class="mb-fly">
+            <div class="mb-label">Subtitles</div>
+            <button data-x="srt" data-need="exportBtn">SubRip subtitles (.srt)</button>
+            <button data-x="vtt" data-need="exportBtn">Web subtitles (.vtt)</button>
+            <button data-x="txt" data-need="exportBtn">Transcript (.txt)</button>
+            <button data-x="txts" data-need="exportBtn">Transcript with times (.txt)</button>
+            <button data-x="docx" data-need="exportBtn">📄 Meeting minutes (.docx) <span class="badge pro-only">PRO</span></button>
+            <div class="mb-label">Video &amp; sound</div>
+            <button data-x="burn" data-need="exportBtn">🎬 Video with captions (1080p) <span class="badge pro-only">PRO</span></button>
+            <button data-x="cut" data-need="exportBtn">✂ Shorter video – pauses cut out <span class="badge pro-only">PRO</span></button>
+            <button data-x="voicevideo" data-need="exportBtn">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
+            <button data-x="voicewav" data-need="exportBtn">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
+          </div>
+        </div>
         <hr>
         <button data-c="recBtn">🎙 Record a meeting…</button>
       </div>
@@ -97,6 +68,11 @@
         <button data-th="navy"><span class="mb-chk"></span> <i class="sw" style="background:#12224a"></i> Dark blue</button>
         <button data-th="red"><span class="mb-chk"></span> <i class="sw" style="background:#5a1a20"></i> Dark red</button>
         <button data-th="orange"><span class="mb-chk"></span> <i class="sw" style="background:#ea580c"></i> Orange</button>
+        <button data-th="lightblue"><span class="mb-chk"></span> <i class="sw" style="background:#bfe3ff"></i> Light blue</button>
+        <button data-th="green"><span class="mb-chk"></span> <i class="sw" style="background:#14532d"></i> Dark green</button>
+        <button data-th="purple"><span class="mb-chk"></span> <i class="sw" style="background:#3b1a5a"></i> Purple</button>
+        <button data-th="pink"><span class="mb-chk"></span> <i class="sw" style="background:#fbcfe8"></i> Pink</button>
+        <button data-th="black"><span class="mb-chk"></span> <i class="sw" style="background:#000000"></i> Black</button>
         <hr>
         <button data-d="styleBox">🎨 Caption look &amp; signals…</button>
         <button data-d="fxBox">✨ Effects, title &amp; video shape…</button>
@@ -109,9 +85,58 @@
       <div class="mb-menu" data-m="help" hidden>
         <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
         <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress%20feedback">✉ Feedback &amp; support</a>
+        <hr>
+        <a href="https://apps.microsoft.com/detail/9PDJ7G2HRVTG" target="_blank" rel="noopener">More apps: ScreenPress – record your screen with your webcam</a>
+        <a href="https://apps.microsoft.com/detail/9NB48B109NR4" target="_blank" rel="noopener">More apps: CueScroll teleprompter</a>
+        <a href="https://apps.microsoft.com/detail/9P25KDSFDB0N" target="_blank" rel="noopener">More apps: PixelBatch image converter</a>
       </div>
     </div>
   </nav>
+  <header class="topbar">
+    <div class="tools" role="toolbar" aria-label="Tools">
+      <button id="openBtn" class="tbi" title="Open video or audio (Ctrl+O)" aria-label="Open video or audio">📂</button>
+      <button id="tbSave" class="tbi" data-c="projSaveBtn" title="Save project (Ctrl+S)" aria-label="Save project">💾</button>
+      <button id="exportBtn" class="tbi" disabled title="Export subtitles or video" aria-label="Export">📤</button>
+      <span class="tb-sep"></span>
+      <button id="tbUndo" class="tbi" data-c="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+      <button id="tbRedo" class="tbi" data-c="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+      <span class="tb-sep"></span>
+      <button id="tbLook" class="tbi" data-d="styleBox" title="Caption look &amp; signals" aria-label="Caption look">🎨</button>
+      <button id="tbRec" class="tbi" data-c="recBtn" title="Record a meeting" aria-label="Record a meeting">🎙</button>
+    </div>
+    <span id="fileName" class="file-name"></span>
+    <div class="top-btns">
+      <button id="moreBtn" class="tb" hidden>☰ More</button>
+      <button id="recBadge" class="rec-badge" hidden title="Recording – click to see or stop">● REC</button>
+      <button id="proBtn" class="pro-btn" hidden>★ Get Pro</button>
+    </div>
+    <div id="exportMenu" class="menu" hidden>
+      <button data-x="srt">SubRip subtitles (.srt) <small>YouTube, Premiere, VLC…</small></button>
+      <button data-x="vtt">Web subtitles (.vtt)</button>
+      <button data-x="txt">Plain text transcript (.txt)</button>
+      <button data-x="txts">Transcript with times (.txt) <small>adds who spoke, if set</small></button>
+      <button data-x="docx">📄 Meeting minutes – Word (.docx) <span class="badge pro-only">PRO</span></button>
+      <button data-x="burn">🎬 Video with captions burned in <span class="badge pro-only">PRO</span></button>
+      <button data-x="cut">✂ Shorter video – long pauses cut out <span class="badge pro-only">PRO</span></button>
+      <button data-x="voicevideo">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
+      <button data-x="voicewav">🎙 AI voice-over audio (.wav) <span class="badge pro-only">PRO</span></button>
+    </div>
+    <div id="menu" class="menu" hidden>
+      <button id="recBtn">🎙 Record a meeting…</button>
+      <button id="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
+      <button id="projSaveBtn">💾 Save project… <small>Ctrl+S</small></button>
+      <button id="projOpenBtn">📂 Open project…</button>
+      <button id="importBtn">Open a subtitle file (.srt / .vtt)…</button>
+      <button id="clearBtn" class="danger">Remove all subtitle lines…</button>
+      <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
+      <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress%20feedback">✉ Feedback &amp; support</a>
+    </div>
+    <input id="fileIn" type="file" accept="video/*,audio/*,.mkv,.mov,.m4a,.mp3,.wav" hidden>
+    <input id="subIn" type="file" accept=".srt,.vtt,text/vtt" hidden>
+    <input id="projIn" type="file" accept=".cpproj,application/json" hidden>
+    <input id="bgIn" type="file" accept="image/*" hidden>
+  </header>
+
   <main class="layout">
     <section class="left">
       <div id="drop" class="drop">
