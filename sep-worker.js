@@ -252,9 +252,9 @@ function reflectPad(signal, padLeft, padRight) {
 }
 
 
-// the vocals track (index 3) of the model's frequency output, back in the time domain
-function vocalsFromFreq(freqOutput) {
-  const nb = MODEL_SPEC_BINS, nf = MODEL_SPEC_FRAMES, base = VOCALS * 4 * nb * nf;
+// one source (0 drums, 1 bass, 2 other, 3 vocals) of the model's frequency output, back in the time domain
+function sourceFromFreq(freqOutput, src) {
+  const nb = MODEL_SPEC_BINS, nf = MODEL_SPEC_FRAMES, base = src * 4 * nb * nf;
   const paddedBins = nb + 1, paddedFrames = nf + 4;
   const pad = (c) => {
     const re = new Float32Array(paddedFrames * paddedBins), im = new Float32Array(paddedFrames * paddedBins);
@@ -266,8 +266,13 @@ function vocalsFromFreq(freqOutput) {
     return { re, im };
   };
   const off = FFT_SIZE / 2 + Math.floor(HOP_SIZE / 2) * 3, len = (paddedFrames - 1) * HOP_SIZE + FFT_SIZE;
-  const out = [0, 1].map((c) => { const p = pad(c); return istft(p.re, p.im, paddedFrames, paddedBins, FFT_SIZE, HOP_SIZE, len).subarray(off, off + TRAINING_SAMPLES); });
-  return out;
+  return [0, 1].map((c) => { const p = pad(c); return istft(p.re, p.im, paddedFrames, paddedBins, FFT_SIZE, HOP_SIZE, len).subarray(off, off + TRAINING_SAMPLES); });
+}
+// the frequency output of several sources added together (cheaper: one inverse STFT for the sum)
+function sumFromFreq(freqOutput, srcs) {
+  const nb = MODEL_SPEC_BINS, nf = MODEL_SPEC_FRAMES, one = 4 * nb * nf, tmp = new Float32Array(one);
+  for (const sI of srcs) { const o = sI * one; for (let i = 0; i < one; i++) tmp[i] += freqOutput[o + i]; }
+  return sourceFromFreq(tmp, 0);
 }
 function prepareModelInput(leftChannel, rightChannel) {
   const inputLength = TRAINING_SAMPLES;
@@ -328,43 +333,68 @@ async function load() {
   throw err || new Error('The vocal remover could not start on this computer.');
 }
 
-async function separate(L, R) {
-  const total = L.length;
+// One pass over the whole song. shift: the song is moved later by this many samples first (Demucs "shifts"),
+// so a second pass cuts the song at other places and the two results can be averaged.
+async function separatePass(L, R, shift, report) {
+  const total = L.length + shift;
   const stride = Math.floor(TRAINING_SAMPLES * (1 - SEGMENT_OVERLAP));
   const segs = Math.max(1, Math.ceil(Math.max(0, total - TRAINING_SAMPLES) / stride) + 1);
-  const vL = new Float32Array(total), vR = new Float32Array(total), wsum = new Float32Array(total);
+  const n = L.length, vL = new Float32Array(n), vR = new Float32Array(n), aL = new Float32Array(n), aR = new Float32Array(n), wsum = new Float32Array(n);
+  const get = (X, i) => (i < shift || i - shift >= n ? 0 : X[i - shift]);
   let k = 0;
   for (let start = 0; start < total; start += stride) {
     if (cancel) throw new Error('cancelled');
     const len = Math.min(TRAINING_SAMPLES, total - start);
     const sL = new Float32Array(TRAINING_SAMPLES), sR = new Float32Array(TRAINING_SAMPLES);
-    sL.set(L.subarray(start, start + len)); sR.set(R.subarray(start, start + len));
+    for (let i = 0; i < len; i++) { sL[i] = get(L, start + i); sR[i] = get(R, start + i); }
     const inp = prepareModelInput(sL, sR);
     const feeds = {};
     feeds[session.inputNames[0]] = new ort.Tensor('float32', inp.wave, [1, 2, TRAINING_SAMPLES]);
     if (session.inputNames.length > 1) feeds[session.inputNames[1]] = new ort.Tensor('float32', inp.mag, [1, 4, MODEL_SPEC_BINS, MODEL_SPEC_FRAMES]);
     const res = await session.run(feeds);
     let td = null, tdims = null, fd = null;
-    for (const n of session.outputNames) {
-      const t = res[n];
+    for (const nm of session.outputNames) {
+      const t = res[nm];
       if (t.dims.length === 4 && t.dims[2] === 2) { td = t.data; tdims = t.dims; }
       else if (t.dims.length === 5 && t.dims[2] === 4) fd = t.data;
     }
     if (!td) throw new Error('The vocal remover gave an unexpected result.');
-    const ns = tdims[3], fr = fd ? vocalsFromFreq(fd) : null;
-    const tb = VOCALS * 2 * ns;
+    const ns = tdims[3], nsrc = tdims[1];
+    const fv = fd ? sourceFromFreq(fd, VOCALS) : null;
+    const others = []; for (let q = 0; q < nsrc; q++) if (q !== VOCALS) others.push(q);
+    const fa = fd ? sumFromFreq(fd, others) : null;
     for (let i = 0; i < len; i++) {
-      const w = Math.min(1, i / (stride * 0.5), (len - i) / (stride * 0.5));
-      const a = td[tb + i] + (fr ? fr[0][i] : 0), b = td[tb + ns + i] + (fr ? fr[1][i] : 0);
-      vL[start + i] += a * w; vR[start + i] += b * w; wsum[start + i] += w;
+      const o = start + i - shift; if (o < 0 || o >= n) continue;
+      const w = Math.max(1e-3, Math.min(1, (i + 1) / (stride * 0.5), (len - i) / (stride * 0.5)));
+      let accL = fa ? fa[0][i] : 0, accR = fa ? fa[1][i] : 0;
+      for (const q of others) { accL += td[q * 2 * ns + i]; accR += td[q * 2 * ns + ns + i]; }
+      const vl = td[VOCALS * 2 * ns + i] + (fv ? fv[0][i] : 0), vr = td[VOCALS * 2 * ns + ns + i] + (fv ? fv[1][i] : 0);
+      vL[o] += vl * w; vR[o] += vr * w; aL[o] += accL * w; aR[o] += accR * w; wsum[o] += w;
     }
-    for (const n of session.outputNames) { try { res[n].dispose && res[n].dispose(); } catch (_) {} }
-    k++;
-    postMessage({ type: 'progress', phase: 'separate', p: k / segs });
+    for (const nm of session.outputNames) { try { res[nm].dispose && res[nm].dispose(); } catch (_) {} }
+    k++; report(k / segs);
     if (start + TRAINING_SAMPLES >= total) break;
   }
-  for (let i = 0; i < total; i++) if (wsum[i] > 0) { vL[i] /= wsum[i]; vR[i] /= wsum[i]; }
-  return [vL, vR];
+  for (let i = 0; i < n; i++) if (wsum[i] > 0) { vL[i] /= wsum[i]; vR[i] /= wsum[i]; aL[i] /= wsum[i]; aR[i] /= wsum[i]; }
+  return [vL, vR, aL, aR];
+}
+// Like Demucs: the song is brought to a standard loudness first and back afterwards; with a fast graphics card
+// it is separated twice, moved by half a second, and the two results are averaged (fewer artefacts).
+async function separate(L0, R0, hq) {
+  const n = L0.length;
+  let mean = 0; for (let i = 0; i < n; i++) mean += (L0[i] + R0[i]) / 2; mean /= Math.max(1, n);
+  let v = 0; for (let i = 0; i < n; i++) { const d = (L0[i] + R0[i]) / 2 - mean; v += d * d; }
+  const std = Math.sqrt(v / Math.max(1, n)) || 1;
+  const L = new Float32Array(n), R = new Float32Array(n);
+  for (let i = 0; i < n; i++) { L[i] = (L0[i] - mean) / std; R[i] = (R0[i] - mean) / std; }
+  const shifts = hq ? [0, Math.round(SAMPLE_RATE * 0.5)] : [0];
+  const out = [new Float32Array(n), new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+  for (let p = 0; p < shifts.length; p++) {
+    const r = await separatePass(L, R, shifts[p], (f) => postMessage({ type: 'progress', phase: 'separate', p: (p + f) / shifts.length }));
+    for (let c = 0; c < 4; c++) { const o = out[c], x = r[c]; for (let i = 0; i < n; i++) o[i] += x[i] / shifts.length; }
+  }
+  for (let c = 0; c < 4; c++) { const o = out[c], m = c < 2 ? mean / 2 : mean / 2; for (let i = 0; i < n; i++) o[i] = o[i] * std + m; }
+  return out;
 }
 
 let cancel = false;
@@ -376,8 +406,9 @@ self.onmessage = async (e) => {
   try {
     await load();
     postMessage({ type: 'progress', phase: 'separate', p: 0, device });
-    const [vL, vR] = await separate(m.left, m.right);
-    postMessage({ type: 'done', vL, vR, device }, [vL.buffer, vR.buffer]);
+    const hq = m.hq !== false && device === 'webgpu';
+    const [vL, vR, aL, aR] = await separate(m.left, m.right, hq);
+    postMessage({ type: 'done', vL, vR, aL, aR, device, hq }, [vL.buffer, vR.buffer, aL.buffer, aR.buffer]);
   } catch (err) {
     postMessage({ type: 'error', message: String((err && err.message) || err) });
   }

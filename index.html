@@ -31,7 +31,6 @@
             <button data-x="vtt" data-need="exportBtn">Web subtitles (.vtt)</button>
             <button data-x="txt" data-need="exportBtn">Transcript (.txt)</button>
             <button data-x="txts" data-need="exportBtn">Transcript with times (.txt)</button>
-            <button data-x="docx" data-need="exportBtn">📄 Meeting minutes (.docx) <span class="badge pro-only">PRO</span></button>
             <div class="mb-label">Video &amp; sound</div>
             <button data-x="burn" data-need="exportBtn">🎬 Video with captions (1080p) <span class="badge pro-only">PRO</span></button>
             <button data-x="cut" data-need="exportBtn">✂ Shorter video – pauses cut out <span class="badge pro-only">PRO</span></button>
@@ -54,6 +53,7 @@
         <button data-c="shiftBtn">⇄ Move all times earlier or later</button>
         <button data-c="fillerBtn">✂ Remove um, uh…</button>
         <button data-c="tapOpen">🎵 Tap timing…</button>
+        <button data-c="hlBtn">🎤 Re-make the karaoke highlight…</button>
         <button data-c="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
         <hr>
         <button data-c="clearBtn" class="danger">Remove all subtitle lines…</button>
@@ -62,25 +62,28 @@
     <div class="mb-item"><button class="mb-top" data-m="opt">Options</button>
       <div class="mb-menu" data-m="opt" hidden>
         <button data-o="linesLeft"><span class="mb-chk"></span> Subtitle lines on the left</button>
+        <button data-o="hlFollow"><span class="mb-chk"></span> Karaoke highlight follows my time changes</button>
         <hr>
-        <div class="mb-label">Colour theme</div>
-        <button data-th="auto"><span class="mb-chk"></span> Same as Windows (light / dark)</button>
-        <button data-th="white"><span class="mb-chk"></span> <i class="sw" style="background:#ffffff"></i> White</button>
-        <button data-th="navy"><span class="mb-chk"></span> <i class="sw" style="background:#12224a"></i> Dark blue</button>
-        <button data-th="red"><span class="mb-chk"></span> <i class="sw" style="background:#5a1a20"></i> Dark red</button>
-        <button data-th="orange"><span class="mb-chk"></span> <i class="sw" style="background:#ea580c"></i> Orange</button>
-        <button data-th="lightblue"><span class="mb-chk"></span> <i class="sw" style="background:#bfe3ff"></i> Light blue</button>
-        <button data-th="green"><span class="mb-chk"></span> <i class="sw" style="background:#14532d"></i> Dark green</button>
-        <button data-th="purple"><span class="mb-chk"></span> <i class="sw" style="background:#3b1a5a"></i> Purple</button>
-        <button data-th="pink"><span class="mb-chk"></span> <i class="sw" style="background:#fbcfe8"></i> Pink</button>
-        <button data-th="black"><span class="mb-chk"></span> <i class="sw" style="background:#000000"></i> Black</button>
+        <div class="mb-sub"><button class="mb-subtop">🎨 Colour theme <small>▸</small></button>
+          <div class="mb-fly">
+            <button data-th="auto"><span class="mb-chk"></span> Same as Windows (light / dark)</button>
+            <button data-th="white"><span class="mb-chk"></span> <i class="sw" style="background:#ffffff"></i> White</button>
+            <button data-th="navy"><span class="mb-chk"></span> <i class="sw" style="background:#12224a"></i> Dark blue</button>
+            <button data-th="red"><span class="mb-chk"></span> <i class="sw" style="background:#5a1a20"></i> Dark red</button>
+            <button data-th="orange"><span class="mb-chk"></span> <i class="sw" style="background:#ea580c"></i> Orange</button>
+            <button data-th="lightblue"><span class="mb-chk"></span> <i class="sw" style="background:#bfe3ff"></i> Light blue</button>
+            <button data-th="green"><span class="mb-chk"></span> <i class="sw" style="background:#14532d"></i> Dark green</button>
+            <button data-th="purple"><span class="mb-chk"></span> <i class="sw" style="background:#3b1a5a"></i> Purple</button>
+            <button data-th="pink"><span class="mb-chk"></span> <i class="sw" style="background:#fbcfe8"></i> Pink</button>
+            <button data-th="black"><span class="mb-chk"></span> <i class="sw" style="background:#000000"></i> Black</button>
+          </div>
+        </div>
         <hr>
         <button data-d="styleBox">🎨 Caption look &amp; signals…</button>
         <button data-d="fxBox">✨ Effects, title &amp; video shape…</button>
         <button data-d="musicBox">🎤 Beat karaoke – remove vocals, key &amp; speed…</button>
         <button data-d="voiceBox">🎙 AI voice-over…</button>
         <button data-d="trCard">🌐 Translate the subtitles…</button>
-        <button data-d="spkCard">👥 Who is speaking – meeting notes…</button>
       </div>
     </div>
     <div class="mb-item"><button class="mb-top" data-m="help">Help</button>
@@ -116,8 +119,7 @@
       <button data-x="srt">SubRip subtitles (.srt) <small>YouTube, Premiere, VLC…</small></button>
       <button data-x="vtt">Web subtitles (.vtt)</button>
       <button data-x="txt">Plain text transcript (.txt)</button>
-      <button data-x="txts">Transcript with times (.txt) <small>adds who spoke, if set</small></button>
-      <button data-x="docx">📄 Meeting minutes – Word (.docx) <span class="badge pro-only">PRO</span></button>
+      <button data-x="txts">Transcript with times (.txt)</button>
       <button data-x="burn">🎬 Video with captions burned in <span class="badge pro-only">PRO</span></button>
       <button data-x="cut">✂ Shorter video – long pauses cut out <span class="badge pro-only">PRO</span></button>
       <button data-x="voicevideo">🎙 Video with AI voice-over <span class="badge pro-only">PRO</span></button>
@@ -126,6 +128,7 @@
     </div>
     <div id="menu" class="menu" hidden>
       <button id="recBtn">🎙 Record a meeting…</button>
+      <button id="hlBtn">🎤 Re-make the karaoke highlight…</button>
       <button id="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
       <button id="projSaveBtn">💾 Save project… <small>Ctrl+S</small></button>
       <button id="projOpenBtn">📂 Open project…</button>
@@ -163,7 +166,7 @@
           <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Position">
           <button id="back5" class="ghost icon" title="Back 5 seconds">⟲ 5</button>
           <button id="fwd5" class="ghost icon" title="Forward 5 seconds">5 ⟳</button>
-          <button id="markBtn" class="ghost icon" title="Mark this moment as important (M)">★ Mark</button>
+          <button id="markBtn" hidden class="ghost icon" title="Mark this moment as important (M)">★ Mark</button>
         </div>
         <details id="styleBox" class="style-box">
           <summary>Caption look</summary>
@@ -332,7 +335,7 @@
         <p id="trStatus" class="hint"></p>
       </details>
 
-      <details id="spkCard" class="card tr-card">
+      <details id="spkCard" class="card tr-card" hidden>
         <summary><strong>👥 Who is speaking – meeting notes</strong> <span class="badge pro-only">PRO</span></summary>
         <p class="hint">Turn a meeting recording into written minutes: every line gets a time and the name of the person who said it. CaptionPress tells the voices apart by itself (on this computer – nothing is uploaded), you type the names and fix any line, then save the minutes as a Word file. First press <b>Create subtitles</b>. The voice finder downloads once (about 27 MB).</p>
         <div class="two tr-row">
@@ -421,6 +424,22 @@
     </div>
   </dialog>
 
+  <dialog id="hlDialog" class="dlg">
+    <h2>🎤 Re-make the karaoke highlight</h2>
+    <p class="hint">The colour moves word by word inside each line. After you change the start or end of lines, make the words fit the new times again.</p>
+    <div class="field">Which lines
+      <label class="check"><input type="radio" name="hlWhich" value="all" checked> All lines</label>
+      <label class="check"><input type="radio" name="hlWhich" value="sel"> <span id="hlSelLabel">Only the selected line</span></label>
+    </div>
+    <div class="field">How
+      <label class="check"><input type="radio" name="hlHow" value="fit" checked> Fit to each line’s time – keep the rhythm of the singing</label>
+      <label class="check"><input type="radio" name="hlHow" value="even"> Spread the words evenly over the line</label>
+    </div>
+    <div class="row-btns">
+      <button id="hlOk" class="primary">✓ Re-make highlight</button>
+      <button id="hlCancel" class="ghost">Cancel</button>
+    </div>
+  </dialog>
   <dialog id="recDialog" class="dlg">
     <h2>🎙 Record a meeting</h2>
     <div id="recSetup">
@@ -455,7 +474,6 @@
       <li><strong>Cut out long pauses</strong> – save a shorter, snappier video in one click</li>
       <li><strong>Save a video with captions burned in</strong> – with animated word-by-word captions (karaoke, two-line karaoke for lyrics videos, pop-up words) for TikTok, Reels and Shorts</li>
       <li><strong>Translate subtitles</strong> from English into Vietnamese, Spanish, French, German, Chinese, Japanese and 13 more languages</li>
-      <li><strong>Meeting notes</strong> – finds who is speaking, remembers voices, talk-time charts, key moments and Word minutes</li>
       <li><strong>AI voice-over</strong> – natural voices in 20+ languages read your subtitles aloud; save the video or a WAV file</li>
     </ul>
     <p class="hint feedback">💬 Something not working the way you want? Tell me – <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress feedback">thequan03072002@gmail.com</a>. I read every message and improve the app.</p>
