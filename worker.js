@@ -85,6 +85,8 @@ self.onmessage = async (e) => {
     } else if (m.type === 'run') {
       const opts = { return_timestamps: m.words ? 'word' : true, task: m.task || 'transcribe' };
       if (m.language) opts.language = m.language;
+      // a short piece cannot hold many words: a limit stops Whisper looping on music (the cause of most "stuck" pieces)
+      if (m.audio && m.audio.length) opts.max_new_tokens = Math.min(440, Math.max(64, Math.ceil(m.audio.length / 16000 * 12)));
       let out, words = !!m.words;
       try { out = await asr(m.audio, opts); }
       catch (err) {
