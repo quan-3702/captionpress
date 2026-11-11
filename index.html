@@ -159,9 +159,10 @@
         <div id="frame" class="frame">
           <video id="video" playsinline></video>
           <canvas id="capCv" class="cap-cv"></canvas>
+          <button id="bigPlay" class="big-play" title="Play (Space)" aria-label="Play">▶</button>
         </div>
         <div class="transport">
-          <button id="playBtn" class="ghost icon" title="Play / pause (Ctrl+Space)">▶</button>
+          <button id="playBtn" class="primary icon play-main" title="Play / pause (Space)">▶</button>
           <span id="clock" class="clock">0:00 / 0:00</span>
           <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Position">
           <button id="back5" class="ghost icon" title="Back 5 seconds">⟲ 5</button>

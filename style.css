@@ -327,3 +327,8 @@ input[type=range], .transport input[type=range] { accent-color: var(--navy-slide
 .topbar .pro-btn.is-pro { background: var(--navy-bar-2); color: var(--navy-text); }
 .sub-h { font-size: 14px; margin: 14px 0 4px; }
 .tr-in { width: 100%; margin: 6px 0; font: inherit; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); resize: vertical; }
+
+.big-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 84px; height: 84px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .55); color: #fff; font-size: 34px; padding: 0 0 0 6px; cursor: pointer; z-index: 3; box-shadow: 0 4px 20px rgba(0, 0, 0, .35); transition: transform .12s, background .12s; }
+.big-play:hover { background: var(--acc); transform: translate(-50%, -50%) scale(1.08); }
+.frame.playing .big-play { opacity: 0; pointer-events: none; }
+.play-main { min-width: 52px; font-size: 18px; border-radius: 50px; }
