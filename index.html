@@ -39,8 +39,6 @@
             <button data-x="beatwav">🎵 Karaoke beat – music only (.wav) <span class="badge pro-only">PRO</span></button>
           </div>
         </div>
-        <hr>
-        <button data-c="recBtn">🎙 Record a meeting…</button>
       </div>
     </div>
     <div class="mb-item"><button class="mb-top" data-m="edit">Edit</button>
@@ -90,6 +88,7 @@
       <div class="mb-menu" data-m="help" hidden>
         <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
         <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress%20feedback">✉ Feedback &amp; support</a>
+        <div class="mb-label">CaptionPress version 1.01</div>
         <hr>
         <a href="https://apps.microsoft.com/detail/9PDJ7G2HRVTG" target="_blank" rel="noopener">More apps: ScreenPress – record your screen with your webcam</a>
         <a href="https://apps.microsoft.com/detail/9NB48B109NR4" target="_blank" rel="noopener">More apps: CueScroll teleprompter</a>
@@ -107,7 +106,7 @@
       <button id="tbRedo" class="tbi" data-c="redoBtn" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
       <span class="tb-sep"></span>
       <button id="tbLook" class="tbi" data-d="styleBox" title="Caption look &amp; signals" aria-label="Caption look">🎨</button>
-      <button id="tbRec" class="tbi" data-c="recBtn" title="Record a meeting" aria-label="Record a meeting">🎙</button>
+      <button id="tbRec" class="tbi" data-c="recBtn" title="Record a meeting" aria-label="Record a meeting" hidden>🎙</button>
     </div>
     <span id="fileName" class="file-name"></span>
     <div class="top-btns">
@@ -127,7 +126,7 @@
       <button data-x="beatwav">🎵 Karaoke beat – music only (.wav) <span class="badge pro-only">PRO</span></button>
     </div>
     <div id="menu" class="menu" hidden>
-      <button id="recBtn">🎙 Record a meeting…</button>
+      <button id="recBtn" hidden>🎙 Record a meeting…</button>
       <button id="hlBtn">🎤 Re-make the karaoke highlight…</button>
       <button id="cutMenuBtn">✂ Cut out long pauses… <span class="badge pro-only">PRO</span></button>
       <button id="projSaveBtn">💾 Save project… <small>Ctrl+S</small></button>
@@ -150,7 +149,7 @@
           <div class="drop-icon">🎬</div>
           <h1>Subtitles for your video in minutes</h1>
           <p>Drop a video or audio file here, or</p>
-          <div class="drop-btns"><button id="dropOpen" class="primary big">Choose a file</button><button id="dropRec" class="ghost big">🎙 Record a meeting</button></div>
+          <div class="drop-btns"><button id="dropOpen" class="primary big">Choose a file</button><button id="dropRec" class="ghost big" hidden>🎙 Record a meeting</button></div>
           <div id="recFound" class="rec-found" hidden><span></span> <button data-r="open" class="primary small">Open it</button> <button data-r="del" class="ghost small">Delete</button></div>
           <p class="hint">The AI runs on this computer. Your video is never uploaded anywhere.</p>
         </div>
@@ -165,8 +164,9 @@
           <button id="playBtn" class="primary icon play-main" title="Play / pause (Space)">▶</button>
           <span id="clock" class="clock">0:00 / 0:00</span>
           <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Position">
-          <button id="back5" class="ghost icon" title="Back 5 seconds">⟲ 5</button>
-          <button id="fwd5" class="ghost icon" title="Forward 5 seconds">5 ⟳</button>
+          <button id="stopBtn" class="ghost icon" title="Stop – back to the start">⏹</button>
+          <button id="back5" class="ghost icon" title="Back 5 seconds">⏪ 5s</button>
+          <button id="fwd5" class="ghost icon" title="Forward 5 seconds">5s ⏩</button>
           <button id="markBtn" hidden class="ghost icon" title="Mark this moment as important (M)">★ Mark</button>
         </div>
         <details id="styleBox" class="style-box">
