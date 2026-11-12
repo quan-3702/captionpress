@@ -92,7 +92,7 @@
       <div class="mb-menu" data-m="help" hidden>
         <a href="help.html" target="_blank" rel="noopener">❓ How to use CaptionPress</a>
         <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress%20feedback">✉ Feedback &amp; support</a>
-        <div class="mb-label">CaptionPress version 1.01</div>
+        <button data-c="aboutBtn">ℹ About CaptionPress…</button>
         <hr>
         <a href="https://apps.microsoft.com/detail/9PDJ7G2HRVTG" target="_blank" rel="noopener">More apps: ScreenPress – record your screen with your webcam</a>
         <a href="https://apps.microsoft.com/detail/9NB48B109NR4" target="_blank" rel="noopener">More apps: CueScroll teleprompter</a>
@@ -471,6 +471,19 @@
     </div>
   </dialog>
 
+  <button id="aboutBtn" hidden></button>
+  <dialog id="aboutDialog" class="dlg about-dlg">
+    <div class="about-head"><img src="icon-192.png" alt="" width="64" height="64"><div><h2>CaptionPress</h2><p class="muted">Auto Subtitle Generator &amp; Editor · Version 1.01</p></div></div>
+    <div class="about-pro" id="aboutPro"></div>
+    <div class="row-btns" id="aboutBtns"><button id="aboutActivate" class="primary">★ Activate Pro version</button><button id="aboutRestore" class="ghost">Restore purchase</button></div>
+    <h3>Team</h3>
+    <p>Developed by <b>NTQ37</b>.<br>Questions and ideas: <a href="mailto:thequan03072002@gmail.com?subject=CaptionPress">thequan03072002@gmail.com</a></p>
+    <h3>Trademark &amp; copyright</h3>
+    <p class="muted">CaptionPress™ and the CaptionPress logo are trademarks of NTQ37. © 2026 NTQ37. All rights reserved. The CaptionPress software, its design and texts are protected by copyright; copying, reselling or publishing it without permission is not allowed.</p>
+    <h3>Open-source parts</h3>
+    <p class="muted">Speech recognition: Whisper models (OpenAI, MIT) run with Transformers.js (Hugging Face, Apache 2.0) and ONNX Runtime Web (Microsoft, MIT). Vocal remover: HTDemucs (Meta, MIT). AI voices: Piper (MIT) with voices from the Piper voices collection, each with its own licence. Speaker voices: WeSpeaker (Apache 2.0).</p>
+    <div class="row-btns"><a class="ghost btn-link" href="help.html" target="_blank" rel="noopener">❓ How to use</a><a class="ghost btn-link" href="privacy.html" target="_blank" rel="noopener">🔒 Privacy</a><button id="aboutClose" class="ghost">Close</button></div>
+  </dialog>
   <dialog id="proDialog" class="dlg">
     <h2>CaptionPress Pro</h2>
     <p class="muted">One-time purchase. Yours forever on this Microsoft account. Not sure yet? Try every Pro feature free for 7 days – saving and exporting needs Pro.</p>

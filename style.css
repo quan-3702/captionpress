@@ -358,3 +358,11 @@ input[type=range], .transport input[type=range] { accent-color: var(--navy-slide
 /* v47: Stop has the Play button's colour as its outline (Hieu) */
 #stopBtn { border: 2px solid var(--accent); border-radius: 50px; min-width: 52px; font-size: 16px; }
 :root[data-theme]:not([data-theme="white"]) #stopBtn { border-color: var(--navy-btn); }
+.about-dlg { max-width: 560px; }
+.about-dlg h3 { font-size: 15px; margin: 14px 0 4px; }
+.about-dlg p { margin: 0; }
+.about-head { display: flex; gap: 14px; align-items: center; }
+.about-head img { border-radius: 14px; }
+.about-head h2 { margin: 0; }
+.about-pro { margin-top: 12px; padding: 9px 12px; border-radius: 10px; background: var(--accent-2); font-weight: 600; }
+.btn-link { text-decoration: none; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--line); color: var(--text); }
