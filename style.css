@@ -354,3 +354,4 @@ input[type=range], .transport input[type=range] { accent-color: var(--navy-slide
 .mb-fly .mb-del { flex: 0 0 auto; padding: 4px 8px; color: var(--muted); }
 .mb-fly .mb-empty { padding: 7px 12px; color: var(--muted); font-size: 13px; }
 .mb-fly small.when { color: var(--muted); margin-left: auto; padding-left: 10px; }
+.toast-act { margin-left: 10px; background: var(--navy-btn); color: #fff; border: 0; border-radius: 8px; padding: 5px 12px; font-weight: 700; cursor: pointer; }
