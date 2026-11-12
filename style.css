@@ -347,3 +347,10 @@ input[type=range], .transport input[type=range] { accent-color: var(--navy-slide
 :root[data-theme]:not([data-theme="white"]) .style-box[open] > summary { margin-bottom: 8px; border-radius: 11px 11px 0 0; }
 :root[data-theme]:not([data-theme="white"]) .style-box { border-color: var(--navy-line); }
 :root[data-theme]:not([data-theme="white"]) .primary { background: var(--navy-btn); border-color: var(--navy-btn); color: #fff; }
+
+/* v45: recent projects & templates */
+.mb-fly .mb-row { display: flex; align-items: center; gap: 2px; }
+.mb-fly .mb-row > button:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-fly .mb-del { flex: 0 0 auto; padding: 4px 8px; color: var(--muted); }
+.mb-fly .mb-empty { padding: 7px 12px; color: var(--muted); font-size: 13px; }
+.mb-fly small.when { color: var(--muted); margin-left: auto; padding-left: 10px; }

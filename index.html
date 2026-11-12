@@ -14,9 +14,12 @@
   <nav id="menubar" class="menubar" aria-label="Menu">
     <div class="mb-item"><button class="mb-top" data-m="file">File</button>
       <div class="mb-menu" data-m="file" hidden>
+        <div class="mb-sub"><button class="mb-subtop">🎨 Templates <small>▸</small></button><div class="mb-fly" id="tplFly"></div></div>
+        <hr>
         <button data-c="fileIn">📂 Open video or audio… <small>Ctrl+O</small></button>
         <button data-c="projOpenBtn">📂 Open project…</button>
         <button data-c="projSaveBtn">💾 Save project <small>Ctrl+S</small></button>
+        <div class="mb-sub"><button class="mb-subtop">🕘 Recent projects <small>▸</small></button><div class="mb-fly" id="recentFly"></div></div>
         <hr>
         <div class="mb-sub"><button class="mb-subtop">📥 Import <small>▸</small></button>
           <div class="mb-fly">
@@ -138,7 +141,8 @@
     </div>
     <input id="fileIn" type="file" accept="video/*,audio/*,.mkv,.mov,.m4a,.mp3,.wav" hidden>
     <input id="subIn" type="file" accept=".srt,.vtt,text/vtt" hidden>
-    <input id="projIn" type="file" accept=".cpproj,application/json" hidden>
+    <input id="tplIn" type="file" accept=".cptemplate,application/json" hidden>
+  <input id="projIn" type="file" accept=".cpproj,application/json" hidden>
     <input id="bgIn" type="file" accept="image/*" hidden>
   </header>
 
