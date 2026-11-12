@@ -26,10 +26,15 @@ async function load(model, big) {
     return pipeline('automatic-speech-recognition', model, { device: dev, dtype, progress_callback });
   };
   try {
-    asr = await attempt(want);
+    try { asr = await attempt(want); }
+    catch (err) { // the graphics card can be busy for a moment after the engine was restarted: try once more
+      if (want !== 'webgpu') throw err;
+      await new Promise((r) => setTimeout(r, 2500));
+      asr = await attempt(want);
+    }
     device = want;
   } catch (err) {
-    if (want !== 'webgpu' || big) throw err;
+    if (want !== 'webgpu' || big) throw (big ? new Error('The graphics card did not answer. Close other programs or browser tabs that use a lot of graphics, then restart CaptionPress and try again – or choose “Very accurate” quality.') : err);
     asr = await attempt('wasm');
     device = 'wasm';
   }
