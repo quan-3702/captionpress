@@ -355,3 +355,6 @@ input[type=range], .transport input[type=range] { accent-color: var(--navy-slide
 .mb-fly .mb-empty { padding: 7px 12px; color: var(--muted); font-size: 13px; }
 .mb-fly small.when { color: var(--muted); margin-left: auto; padding-left: 10px; }
 .toast-act { margin-left: 10px; background: var(--navy-btn); color: #fff; border: 0; border-radius: 8px; padding: 5px 12px; font-weight: 700; cursor: pointer; }
+/* v47: Stop has the Play button's colour as its outline (Hieu) */
+#stopBtn { border: 2px solid var(--accent); border-radius: 50px; min-width: 52px; font-size: 16px; }
+:root[data-theme]:not([data-theme="white"]) #stopBtn { border-color: var(--navy-btn); }
